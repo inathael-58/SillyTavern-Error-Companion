@@ -24,26 +24,17 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.2.1'; // keep in sync with manifest.json
+const VERSION = '0.3.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The built-in companion. Its sprites ship with the extension and its lines are the rules' own. */
-const TAWAN = Object.freeze({ id: 'tawan', name: 'ตะวัน', color: DEFAULT_COLOR, sprites: {}, lines: {} });
+const TAWAN = Object.freeze({ id: 'tawan', name: 'ตะวัน', color: DEFAULT_COLOR, images: [], errorImages: {}, lines: {} });
 const builtinSprite = mood => new URL(`sprites/tawan/${mood}.webp`, BASE_URL).href;
 /** Tawan's head in each of his 588×520 sprites (centre and width), for the round icon in the small bubble. */
 const TAWAN_CROP = Object.fromEntries(Object.entries({
     neutral: [278, 122], tired: [282, 115], pious: [278, 121],
     exhausted: [262, 123], shocked: [280, 119], confused: [240, 137],
 }).map(([mood, [x, y]]) => [mood, { x: x / 588, y: y / 520, size: 280 / 588 }]));
-
-const MOOD_LABELS = {
-    neutral: 'ปกติ · error ที่ไม่รู้จัก',
-    tired: 'ปลง / เหนื่อย · เซิร์ฟเวอร์คนแน่น',
-    pious: 'สำรวม / สารภาพบาป · โดนบล็อก',
-    exhausted: 'หมดแรง · โควตา, เครดิต, context',
-    shocked: 'ตกใจ · ต่อไม่ติด, เซิร์ฟเวอร์พัง',
-    confused: 'งง · key ผิด, ตอบว่าง, ไม่พบโมเดล, ประเทศ',
-};
 
 const DEFAULTS = Object.freeze({
     enabled: true,
@@ -52,7 +43,7 @@ const DEFAULTS = Object.freeze({
     typewriter: true,
     muted: {},          // rule id → true: don't show this one
     active: 'tawan',    // companion id
-    companions: [],     // user-made: { id, name, color, sprites: {mood: url}, lines: {ruleId: tiers} }
+    companions: [],     // user-made: { id, name, color, images: [{id, name, url}], errorImages: {ruleId: imageId}, lines: {ruleId: tiers}, crop, icon? }
 });
 
 const MINI_MS = 9000;      // the small bubble hides itself after this long
@@ -98,21 +89,26 @@ function activeCompanion() {
     return s.companions.find(c => c.id === s.active) ?? TAWAN;
 }
 
-/** Own image for this mood → own neutral image → Tawan's image for this mood. */
-function spriteFor(comp, mood) {
-    const own = comp.sprites?.[mood] || comp.sprites?.neutral;
-    return own ? { url: own, builtin: false } : { url: builtinSprite(mood), builtin: true };
+/**
+ * The picture for this error: the image the companion picked for it, else its first image;
+ * a companion without images uses Tawan's sprite for the error's mood.
+ */
+function imageFor(comp, rule) {
+    const images = comp.images ?? [];
+    if (!images.length) return { url: builtinSprite(rule.mood), builtin: true };
+    const img = images.find(i => i.id === comp.errorImages?.[rule.id]) ?? images[0];
+    return { url: img.url, builtin: false };
 }
 
 /**
- * The round icon for this mood: the companion's own icon image if it has one (fills the circle),
- * else its sprite with its crop (Tawan's sprites: his per-mood crop).
+ * The round icon for this error: the companion's own icon image if it has one (fills the circle),
+ * else its picture with the companion's crop (Tawan's sprites: his per-mood crop).
  * @returns {{ url: string, crop: { x: number, y: number, size: number } | null }} crop null = fill
  */
-function iconFor(comp, mood) {
+function iconFor(comp, rule) {
     if (comp.icon) return { url: comp.icon, crop: null };
-    const sprite = spriteFor(comp, mood);
-    return { url: sprite.url, crop: sprite.builtin ? TAWAN_CROP[mood] : sanitizeCrop(comp.crop) };
+    const img = imageFor(comp, rule);
+    return { url: img.url, crop: img.builtin ? TAWAN_CROP[rule.mood] : sanitizeCrop(comp.crop) };
 }
 
 /** Show `icon` inside `circle` (a d×d box, overflow hidden, holding one <img>). */
@@ -150,6 +146,22 @@ function uniqueName(name, exceptId) {
         const candidate = `${name} (${i})`;
         if (!taken.has(candidate)) return candidate;
     }
+}
+
+/** Companions saved by v0.2 had six fixed image slots; give them the image list + per-error choice. */
+function migrateCompanions() {
+    const s = settings();
+    if (s.companions.every(c => Array.isArray(c.images))) return;
+    s.companions = s.companions.flatMap(c => {
+        if (Array.isArray(c.images)) return [c];
+        try {
+            return [{ id: c.id, ...sanitizeCompanion(c) }];
+        } catch (e) {
+            console.warn(LOG, 'dropped a companion that could not be converted', c, e);
+            return [];
+        }
+    });
+    save();
 }
 
 // ---------------------------------------------------------------- today's counts
@@ -327,7 +339,7 @@ function openFull() {
     if (!root) buildRoot();
     closeMini();
     const { rule, raw, line, comp } = current;
-    setSprite(root.querySelector('.ec_sprite'), spriteFor(comp, rule.mood).url);
+    setSprite(root.querySelector('.ec_sprite'), imageFor(comp, rule).url);
     applyColors(root, comp);
     root.dataset.mood = rule.mood;
     root.querySelector('#ec_name').textContent = comp.name;
@@ -410,7 +422,7 @@ function openMini() {
     if (!mini) buildMini();
     const { rule, line, comp } = current;
     mini.querySelector('.ec_face img').alt = comp.name;
-    placeIcon(mini.querySelector('.ec_face'), iconFor(comp, rule.mood), 64);
+    placeIcon(mini.querySelector('.ec_face'), iconFor(comp, rule), 64);
     applyColors(mini, comp);
     mini.querySelector('.ec_mini_who').textContent = comp.name;
     mini.querySelector('.ec_mini_line').textContent = line;
@@ -543,7 +555,7 @@ function renderSettingsList() {
         </div>`).join('');
     for (const row of list.querySelectorAll('[data-rule]')) {
         const rule = ruleById(/** @type {HTMLElement} */ (row).dataset.rule);
-        placeIcon(row.querySelector('.ec_rule_face'), iconFor(comp, rule.mood), 26);
+        placeIcon(row.querySelector('.ec_rule_face'), iconFor(comp, rule), 26);
     }
     renderSettingsCounts();
 }
@@ -590,7 +602,7 @@ function bindCompanionControls() {
         if (comp !== TAWAN) return openEditor(comp);
         // Tawan can't be edited: start a new one from his lines
         const lines = Object.fromEntries(ALL_RULES.map(r => [r.id, structuredClone(r.lines)]));
-        openEditor(null, { name: `${TAWAN.name} (สำเนา)`, color: TAWAN.color, sprites: {}, lines });
+        openEditor(null, { name: `${TAWAN.name} (สำเนา)`, color: TAWAN.color, images: [], errorImages: {}, lines });
     });
     $id('ec_comp_del').addEventListener('click', async () => {
         const comp = activeCompanion();
@@ -643,7 +655,7 @@ function importCompanion(text) {
     try {
         const data = JSON.parse(String(text ?? '').trim());
         if (data?.type !== COMPANION_TYPE) throw new Error('ไม่ใช่ไฟล์คอมพาเนียนของ Error Companion');
-        comp = sanitizeCompanion(data, RULE_IDS);
+        comp = sanitizeCompanion(data);
     } catch (e) {
         notify('warning', `นำเข้าไม่ได้: ${e instanceof SyntaxError ? 'ข้อความ JSON ไม่ถูกต้อง' : e.message}`);
         return false;
@@ -673,7 +685,7 @@ let editingId = null; // id being edited, null = new
  */
 function openEditor(comp, start) {
     const box = $id('ec_editor');
-    const c = comp ?? start ?? { name: '', color: DEFAULT_COLOR, sprites: {}, lines: {} };
+    const c = comp ?? start ?? { name: '', color: DEFAULT_COLOR, images: [], errorImages: {}, lines: {} };
     editingId = comp?.id ?? null;
     box.innerHTML = `
         <div class="ec_editor">
@@ -683,18 +695,14 @@ function openEditor(comp, start) {
                 <label class="ec_field ec_ed_colorfield">สีป้ายชื่อ <input type="color" id="ec_ed_color"></label>
             </div>
 
-            <div class="ec_set_title">รูป <small class="ec_note ec_inline">(URL)</small></div>
-            <small class="ec_note">ช่องที่ว่างใช้รูป "ปกติ" แทน · ว่างทั้งหมด = ใช้รูปของตะวัน · ภาพครึ่งตัว พื้นหลังโปร่งใส ขอบล่างตัดตรง จะดูดีที่สุด · ถ้าจะแชร์ ให้ใช้ลิงก์ที่เปิดได้จากทุกเครื่อง (เช่นอัปโหลดไว้ที่ catbox.moe หรือ imgur)</small>
-            ${MOODS.map(m => `
-            <div class="ec_ed_sprite" data-mood="${m}">
-                <img class="ec_ed_thumb" alt="">
-                <label class="ec_field">${esc(MOOD_LABELS[m])}
-                    <input type="url" class="text_pole ec_ed_url" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
-            </div>`).join('')}
+            <div class="ec_set_title">รูป</div>
+            <small class="ec_note">เพิ่มได้หลายรูป ตั้งชื่อให้จำง่าย แล้วเลือกใน error แต่ละแบบด้านล่างว่าจะใช้รูปไหน · error ที่ไม่ได้เลือกใช้รูปแรก · ไม่มีรูปเลย = ใช้รูปของตะวัน · ภาพครึ่งตัว พื้นหลังโปร่งใส ขอบล่างตัดตรง จะดูดีที่สุด · ถ้าจะแชร์ ให้ใช้ลิงก์ที่เปิดได้จากทุกเครื่อง (เช่น catbox.moe, imgur)</small>
+            <div id="ec_ed_images" class="ec_ed_images"></div>
+            <div class="ec_btns"><div id="ec_ed_addimg" class="menu_button"><i class="fa-solid fa-plus"></i> เพิ่มรูป</div></div>
 
             <div class="ec_set_title">ไอคอนในแบบมินิ</div>
-            <small class="ec_note">เลื่อนให้หน้าอยู่กลางวง · ใช้ตำแหน่งเดียวกันทุกสีหน้า ดูให้ครบทุกวง</small>
-            <div class="ec_ed_faces">${MOODS.map(m => `<span class="ec_ed_face" data-mood="${m}" title="${esc(MOOD_LABELS[m])}"><img alt=""></span>`).join('')}</div>
+            <small class="ec_note">เลื่อนให้หน้าอยู่กลางวง · ใช้ตำแหน่งเดียวกันทุกรูป ดูให้ครบทุกวง</small>
+            <div id="ec_ed_faces" class="ec_ed_faces"></div>
             <div class="ec_ed_sliders">
                 <label>ซ้าย ↔ ขวา <input type="range" id="ec_ed_cx" min="0" max="100" step="1"></label>
                 <label>ขึ้น ↕ ลง <input type="range" id="ec_ed_cy" min="0" max="100" step="1"></label>
@@ -705,12 +713,14 @@ function openEditor(comp, start) {
             <label class="ec_field">หรือใช้รูปไอคอนแยก <small class="ec_note ec_inline">(ไม่บังคับ · รูปหน้าตรง ๆ จะเต็มวงพอดี)</small>
                 <input type="url" id="ec_ed_icon" class="text_pole" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
 
-            <div class="ec_set_title">บทพูด</div>
-            <small class="ec_note">บรรทัดละประโยค (สุ่มมาหนึ่งประโยค) · ขึ้นต้นด้วย <code>[3]</code> = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · <code>{n}</code> = จำนวนครั้ง · ว่าง = ใช้บทของตะวัน · คำอธิบายใต้บทพูดใช้ของกลางเหมือนกันทุกตัว</small>
+            <div class="ec_set_title">error แต่ละแบบ</div>
+            <small class="ec_note">เลือกรูปและเขียนบทพูด · บรรทัดละประโยค (สุ่มมาหนึ่งประโยค) · ขึ้นต้นด้วย <code>[3]</code> = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · <code>{n}</code> = จำนวนครั้ง · ว่าง = ใช้บทของตะวัน · คำอธิบายใต้บทพูดใช้ของกลางเหมือนกันทุกตัว</small>
             ${ALL_RULES.map(r => `
-            <details class="ec_ed_lines" data-rule="${r.id}">
-                <summary>${esc(r.name)} <small class="ec_ed_mark"></small></summary>
-                <textarea class="text_pole" rows="4" spellcheck="false" placeholder="${esc(formatLines(r.lines))}"></textarea>
+            <details class="ec_ed_rule" data-rule="${r.id}">
+                <summary><span class="ec_ed_face ec_ed_face_sm"><img alt=""></span><span>${esc(r.name)}</span> <small class="ec_ed_mark"></small></summary>
+                <label class="ec_field">รูป <select class="text_pole ec_ed_pick"></select></label>
+                <label class="ec_field">บทพูด
+                    <textarea class="text_pole" rows="4" spellcheck="false" placeholder="${esc(formatLines(r.lines))}"></textarea></label>
             </details>`).join('')}
 
             <div class="ec_btns">
@@ -722,38 +732,50 @@ function openEditor(comp, start) {
 
     /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value = c.name ?? '';
     /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value = c.color || DEFAULT_COLOR;
-    for (const row of box.querySelectorAll('.ec_ed_sprite')) {
-        const mood = /** @type {HTMLElement} */ (row).dataset.mood;
-        const input = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url'));
-        input.value = c.sprites?.[mood] ?? '';
-        input.addEventListener('input', updateThumbs);
+    /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value = c.icon ?? '';
+    for (const img of c.images ?? []) addImageRow(box, img);
+    refreshPicks(box);
+    for (const det of box.querySelectorAll('.ec_ed_rule')) {
+        const id = /** @type {HTMLElement} */ (det).dataset.rule;
+        /** @type {HTMLSelectElement} */ (det.querySelector('.ec_ed_pick')).value = c.errorImages?.[id] ?? '';
+        det.querySelector('textarea').value = formatLines(c.lines?.[id]);
+        markRule(det);
     }
-    const crop = sanitizeCrop(c.crop);
     const setCropInputs = k => {
         /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cx')).value = String(Math.round(k.x * 100));
         /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cy')).value = String(Math.round(k.y * 100));
         /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cz')).value = String(Math.round((1 - k.size) * 100));
     };
-    setCropInputs(crop);
-    for (const id of ['#ec_ed_cx', '#ec_ed_cy', '#ec_ed_cz', '#ec_ed_icon']) box.querySelector(id).addEventListener('input', updateThumbs);
-    box.querySelector('#ec_ed_crop_reset').addEventListener('click', () => { setCropInputs(DEFAULT_CROP); updateThumbs(); });
-    /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value = c.icon ?? '';
-    box.querySelector('#ec_ed_color').addEventListener('input', updateThumbs);
-    for (const det of box.querySelectorAll('.ec_ed_lines')) {
-        const id = /** @type {HTMLElement} */ (det).dataset.rule;
-        const area = /** @type {HTMLTextAreaElement} */ (det.querySelector('textarea'));
-        area.value = formatLines(c.lines?.[id]);
-        area.addEventListener('input', () => markLines(det));
-        markLines(det);
-    }
-    updateThumbs();
+    setCropInputs(sanitizeCrop(c.crop));
+    updatePreview();
 
+    box.oninput = e => {
+        const t = /** @type {HTMLElement} */ (e.target);
+        if (t.closest('.ec_ed_img')) refreshPicks(box);
+        if (t.closest('.ec_ed_rule')) markRule(t.closest('.ec_ed_rule'));
+        updatePreview();
+    };
+    box.onchange = box.oninput;
+    box.querySelector('#ec_ed_addimg').addEventListener('click', () => {
+        const row = addImageRow(box, { id: '', name: '', url: '' });
+        refreshPicks(box);
+        updatePreview();
+        row.querySelector('.ec_ed_imgname').focus();
+    });
+    box.querySelector('#ec_ed_images').addEventListener('click', e => {
+        const row = /** @type {HTMLElement} */ (e.target).closest('.ec_ed_delimg')?.closest('.ec_ed_img');
+        if (!row) return;
+        row.remove();
+        refreshPicks(box);
+        updatePreview();
+    });
+    box.querySelector('#ec_ed_crop_reset').addEventListener('click', () => { setCropInputs(DEFAULT_CROP); updatePreview(); });
     box.querySelector('#ec_ed_save').addEventListener('click', saveEditor);
     box.querySelector('#ec_ed_try').addEventListener('click', () => {
         const comp = readEditor();
         if (!comp) return;
-        const withLines = ALL_RULES.filter(r => comp.lines[r.id]);
-        const pool = withLines.length ? withLines : RULES;
+        const touched = ALL_RULES.filter(r => comp.lines[r.id] || comp.errorImages[r.id]);
+        const pool = touched.length ? touched : RULES;
         const rule = pool[Math.floor(Math.random() * pool.length)];
         closeFull();
         show(rule, rule.sample, 1, 'full', { id: 'preview', ...comp });
@@ -763,9 +785,47 @@ function openEditor(comp, start) {
     box.querySelector('#ec_ed_name').focus();
 }
 
-function markLines(det) {
-    const filled = !!det.querySelector('textarea').value.trim();
-    det.querySelector('.ec_ed_mark').textContent = filled ? '· เขียนเองแล้ว' : '';
+/** One row in the image list. A new row gets an id unused in this editor. */
+function addImageRow(box, img) {
+    const list = box.querySelector('#ec_ed_images');
+    const taken = new Set([...list.querySelectorAll('.ec_ed_img')].map(r => /** @type {HTMLElement} */ (r).dataset.img));
+    let id = img.id;
+    for (let n = taken.size + 1; !id || taken.has(id); n++) id = `img${n}`;
+    const row = document.createElement('div');
+    row.className = 'ec_ed_img';
+    row.dataset.img = id;
+    row.innerHTML = `
+        <img class="ec_ed_thumb" alt="">
+        <div class="ec_ed_img_fields">
+            <input type="text" class="text_pole ec_ed_imgname" maxlength="30" placeholder="ชื่อรูป เช่น ยิ้ม, ตกใจ, ร้องไห้">
+            <input type="url" class="text_pole ec_ed_url" placeholder="https://…" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="menu_button ec_ed_delimg" title="ลบรูปนี้"><i class="fa-solid fa-trash"></i></div>`;
+    /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value = img.name ?? '';
+    /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value = img.url ?? '';
+    list.append(row);
+    return row;
+}
+
+/** The image dropdown of every error follows the image list (keeping each choice while it exists). */
+function refreshPicks(box) {
+    const rows = [...box.querySelectorAll('.ec_ed_img')];
+    const options = `<option value="">รูปแรก (ค่าเริ่มต้น)</option>` + rows.map((row, i) => {
+        const name = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value.trim() || `รูป ${i + 1}`;
+        return `<option value="${esc(/** @type {HTMLElement} */ (row).dataset.img)}">${esc(name)}</option>`;
+    }).join('');
+    for (const select of box.querySelectorAll('.ec_ed_pick')) {
+        const keep = /** @type {HTMLSelectElement} */ (select).value;
+        select.innerHTML = options;
+        /** @type {HTMLSelectElement} */ (select).value = rows.some(r => /** @type {HTMLElement} */ (r).dataset.img === keep) ? keep : '';
+    }
+}
+
+function markRule(det) {
+    const parts = [];
+    if (det.querySelector('.ec_ed_pick').value) parts.push('เลือกรูปแล้ว');
+    if (det.querySelector('textarea').value.trim()) parts.push('เขียนบทเองแล้ว');
+    det.querySelector('.ec_ed_mark').textContent = parts.length ? `· ${parts.join(' · ')}` : '';
 }
 
 /** Crop as set by the sliders. */
@@ -774,34 +834,59 @@ function editorCrop(box) {
     return sanitizeCrop({ x: val('#ec_ed_cx') / 100, y: val('#ec_ed_cy') / 100, size: 1 - val('#ec_ed_cz') / 100 });
 }
 
-/** Thumbnails and round icons show what each mood will use, including the fallbacks. */
-function updateThumbs() {
-    const box = $id('ec_editor');
+/** What the form says right now, leniently: bad or empty links are left out (and outlined) instead of refused. */
+function editorPreview(box) {
     const usable = input => {
         const url = /** @type {HTMLInputElement} */ (input).value.trim();
         const ok = !url || isSafeImageUrl(url);
         input.classList.toggle('ec_bad', !ok);
         return url && ok ? url : '';
     };
-    const sprites = {};
-    for (const input of box.querySelectorAll('.ec_ed_url')) {
-        const url = usable(input);
-        if (url) sprites[/** @type {HTMLElement} */ (input.closest('[data-mood]')).dataset.mood] = url;
+    const images = [];
+    for (const row of box.querySelectorAll('.ec_ed_img')) {
+        const url = usable(row.querySelector('.ec_ed_url'));
+        const name = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value.trim();
+        setSprite(row.querySelector('.ec_ed_thumb'), url || builtinSprite('neutral'));
+        row.querySelector('.ec_ed_thumb').classList.toggle('ec_placeholder', !url);
+        if (url) images.push({ id: /** @type {HTMLElement} */ (row).dataset.img, name, url });
     }
-    const preview = { sprites, icon: usable(box.querySelector('#ec_ed_icon')), crop: editorCrop(box) };
-    for (const row of box.querySelectorAll('.ec_ed_sprite')) {
-        setSprite(row.querySelector('.ec_ed_thumb'), spriteFor(preview, /** @type {HTMLElement} */ (row).dataset.mood).url);
+    const errorImages = {};
+    for (const det of box.querySelectorAll('.ec_ed_rule')) {
+        const pick = /** @type {HTMLSelectElement} */ (det.querySelector('.ec_ed_pick')).value;
+        if (pick) errorImages[/** @type {HTMLElement} */ (det).dataset.rule] = pick;
     }
+    return { images, errorImages, icon: usable(box.querySelector('#ec_ed_icon')), crop: editorCrop(box) };
+}
+
+/** Thumbnails and round icons show what each error will use, including the fallbacks. */
+function updatePreview() {
+    const box = $id('ec_editor');
+    const preview = editorPreview(box);
     const color = /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value;
-    for (const face of box.querySelectorAll('.ec_ed_face')) {
-        /** @type {HTMLElement} */ (face).style.borderColor = color;
-        placeIcon(face, iconFor(preview, /** @type {HTMLElement} */ (face).dataset.mood), 48);
+
+    // one round icon per image (or the icon image / Tawan when there are none of their own)
+    const faces = box.querySelector('#ec_ed_faces');
+    const icons = preview.icon ? [{ title: 'รูปไอคอนแยก', icon: { url: preview.icon, crop: null } }]
+        : preview.images.length ? preview.images.map(img => ({ title: img.name, icon: { url: img.url, crop: preview.crop } }))
+            : [{ title: TAWAN.name, icon: iconFor(preview, UNKNOWN) }];
+    faces.innerHTML = icons.map(() => '<span class="ec_ed_face"><img alt=""></span>').join('');
+    icons.forEach((it, i) => {
+        const face = /** @type {HTMLElement} */ (faces.children[i]);
+        face.title = it.title;
+        face.style.borderColor = color;
+        placeIcon(face, it.icon, 48);
+    });
+    for (const det of box.querySelectorAll('.ec_ed_rule')) {
+        const face = /** @type {HTMLElement} */ (det.querySelector('.ec_ed_face'));
+        face.style.borderColor = color;
+        placeIcon(face, iconFor(preview, ruleById(/** @type {HTMLElement} */ (det).dataset.rule)), 28);
     }
-    // the sliders only matter for the companion's own sprites
-    const own = !preview.icon && Object.keys(sprites).length > 0;
+
+    // the sliders only matter for the companion's own images
+    const own = !preview.icon && preview.images.length > 0;
     box.querySelector('.ec_ed_sliders').classList.toggle('ec_off', !own);
     box.querySelector('#ec_ed_cropnote').textContent = preview.icon
-        ? 'ใช้รูปไอคอนแยกอยู่ (ลบลิงก์ไอคอนออกเพื่อกลับมาครอปจากรูปสีหน้า)'
+        ? 'ใช้รูปไอคอนแยกอยู่ (ลบลิงก์ไอคอนออกเพื่อกลับมาครอปจากรูป)'
         : own ? '' : 'ยังไม่มีรูปของตัวเอง ใช้รูปและตำแหน่งของตะวัน';
 }
 
@@ -811,19 +896,23 @@ function readEditor() {
     const raw = {
         name: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value,
         color: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value,
-        sprites: {},
+        images: [...box.querySelectorAll('.ec_ed_img')].map(row => ({
+            id: /** @type {HTMLElement} */ (row).dataset.img,
+            name: /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value,
+            url: /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value,
+        })),
+        errorImages: {},
         icon: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value,
         crop: editorCrop(box),
         lines: {},
     };
-    for (const input of box.querySelectorAll('.ec_ed_url')) {
-        raw.sprites[/** @type {HTMLElement} */ (input.closest('[data-mood]')).dataset.mood] = /** @type {HTMLInputElement} */ (input).value;
-    }
-    for (const det of box.querySelectorAll('.ec_ed_lines')) {
-        raw.lines[/** @type {HTMLElement} */ (det).dataset.rule] = det.querySelector('textarea').value;
+    for (const det of box.querySelectorAll('.ec_ed_rule')) {
+        const id = /** @type {HTMLElement} */ (det).dataset.rule;
+        raw.errorImages[id] = /** @type {HTMLSelectElement} */ (det.querySelector('.ec_ed_pick')).value;
+        raw.lines[id] = det.querySelector('textarea').value;
     }
     try {
-        return sanitizeCompanion(raw, RULE_IDS);
+        return sanitizeCompanion(raw);
     } catch (e) {
         notify('warning', e.message);
         return null;
@@ -920,13 +1009,15 @@ async function reloadWithFreshFiles() {
 function init() {
     if (globalThis.ErrorCompanion) return; // loaded twice
     settings();
+    migrateCompanions();
     hookToastr();
     renderSettings();
     registerCommand();
     // warm the cache so the first pop-up doesn't show an empty frame
     setTimeout(() => {
         const comp = activeCompanion();
-        for (const m of MOODS) new Image().src = spriteFor(comp, m).url;
+        const urls = comp.images?.length ? comp.images.map(i => i.url) : MOODS.map(builtinSprite);
+        for (const url of urls) new Image().src = url;
     }, 4000);
 
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForNewVersion(); });

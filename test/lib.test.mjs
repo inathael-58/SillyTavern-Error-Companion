@@ -24,6 +24,7 @@ test('real error texts land on the right rule', () => {
         ['The input token count (1200000) exceeds the maximum number of tokens allowed (1048576).', 'context'],
         ['models/gemini-1.0-pro is not found for API version v1beta, or is not supported for generateContent.', 'model'],
         ['Internal error encountered.', 'server'],
+        ['Requests ending with a model turn are not supported.', 'prefill'],
         ['Deadline expired before operation could complete.', 'server'],
         // OpenRouter / OpenAI / Anthropic
         ['Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day', 'quota'],
@@ -37,6 +38,7 @@ test('real error texts land on the right rule', () => {
         ["This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens.", 'context'],
         ['prompt is too long: 210000 tokens > 200000 maximum', 'context'],
         ['Overloaded', 'overloaded'],
+        ['This model does not support assistant message prefill. The conversation must end with a user message.', 'prefill'],
         ['Provider returned error', 'server'],
         // SillyTavern itself
         ['Could not get a reply from API. Check your connection settings / API key and try again.', 'network'],
@@ -130,7 +132,14 @@ test('sanitizeCompanion cleans and validates', () => {
         type: 'error-companion',
         name: '  พี่หมอก  ',
         color: '#ABCDEF',
-        sprites: { neutral: ' https://x.test/n.png ', tired: '', weird: 'https://x.test/w.png' },
+        images: [
+            { id: 'smile', name: ' ยิ้ม ', url: ' https://x.test/smile.png ' },
+            { id: 'cry', name: '', url: '/img/cry.png' },
+            { id: 'empty', name: 'ไม่มีลิงก์', url: '' },
+            { id: 'smile', name: 'ซ้ำ id', url: 'https://x.test/dup.png' },
+            'junk',
+        ],
+        errorImages: { overloaded: 'cry', quota: 'empty', blocked: 'nope', nonsense: 'smile', network: 'smile' },
         lines: {
             overloaded: [{ from: 1, text: ['เต็มอีกแล้ว'] }, { from: 3, text: ['ไปนอนเถอะ', 42] }],
             blocked: 'สารภาพมา\n[2] อีกแล้วเหรอ',
@@ -139,11 +148,16 @@ test('sanitizeCompanion cleans and validates', () => {
             empty: [],
         },
         extra: 'dropped',
-    }, IDS);
+    });
     assert.deepEqual(c, {
         name: 'พี่หมอก',
         color: '#abcdef',
-        sprites: { neutral: 'https://x.test/n.png' },
+        images: [
+            { id: 'smile', name: 'ยิ้ม', url: 'https://x.test/smile.png' },
+            { id: 'cry', name: 'รูป 2', url: '/img/cry.png' },
+            { id: 'img3', name: 'ซ้ำ id', url: 'https://x.test/dup.png' },
+        ],
+        errorImages: { overloaded: 'cry', network: 'smile' },
         lines: {
             overloaded: [{ from: 1, text: ['เต็มอีกแล้ว'] }, { from: 3, text: ['ไปนอนเถอะ'] }],
             blocked: [{ from: 1, text: ['สารภาพมา'] }, { from: 2, text: ['อีกแล้วเหรอ'] }],
@@ -151,26 +165,61 @@ test('sanitizeCompanion cleans and validates', () => {
         },
         crop: { ...DEFAULT_CROP },
     });
-    assert.equal(sanitizeCompanion({ name: 'a', color: 'red' }, IDS).color, DEFAULT_COLOR);
-    assert.throws(() => sanitizeCompanion({ name: '' }, IDS), /ชื่อ/);
-    assert.throws(() => sanitizeCompanion({ type: 'chara_card_v2', name: 'x' }, IDS), /ไม่ใช่ไฟล์/);
-    assert.throws(() => sanitizeCompanion([], IDS), /ไม่ใช่ไฟล์/);
-    assert.throws(() => sanitizeCompanion({ name: 'x', sprites: { shocked: 'javascript:alert(1)' } }, IDS), /shocked/);
-    assert.throws(() => sanitizeCompanion({ name: 'x', icon: 'javascript:alert(1)' }, IDS), /ไอคอน/);
-    assert.equal(sanitizeCompanion({ name: 'x', icon: ' /img/face.png ' }, IDS).icon, '/img/face.png');
-    assert.equal('icon' in sanitizeCompanion({ name: 'x', icon: '' }, IDS), false);
-    // at most 50 lines per error
-    const many = sanitizeCompanion({ name: 'x', lines: { network: Array.from({ length: 80 }, (_, i) => `l${i}`) } }, IDS);
+    assert.equal(sanitizeCompanion({ name: 'a', color: 'red' }).color, DEFAULT_COLOR);
+    assert.deepEqual(sanitizeCompanion({ name: 'a' }).images, []);
+    assert.throws(() => sanitizeCompanion({ name: '' }), /ชื่อ/);
+    assert.throws(() => sanitizeCompanion({ type: 'chara_card_v2', name: 'x' }), /ไม่ใช่ไฟล์/);
+    assert.throws(() => sanitizeCompanion([]), /ไม่ใช่ไฟล์/);
+    assert.throws(() => sanitizeCompanion({ name: 'x', images: [{ name: 'ตกใจ', url: 'javascript:alert(1)' }] }), /ตกใจ/);
+    assert.throws(() => sanitizeCompanion({ name: 'x', icon: 'javascript:alert(1)' }), /ไอคอน/);
+    assert.equal(sanitizeCompanion({ name: 'x', icon: ' /img/face.png ' }).icon, '/img/face.png');
+    assert.equal('icon' in sanitizeCompanion({ name: 'x', icon: '' }), false);
+    // at most 50 lines per error, 40 images
+    const many = sanitizeCompanion({
+        name: 'x',
+        images: Array.from({ length: 60 }, (_, i) => ({ url: `/i/${i}.png` })),
+        lines: { network: Array.from({ length: 80 }, (_, i) => `l${i}`) },
+    });
     assert.equal(many.lines.network[0].text.length, 50);
+    assert.equal(many.images.length, 40);
+});
+
+test('version-1 companions (six fixed slots) are converted', () => {
+    const c = sanitizeCompanion({
+        type: 'error-companion',
+        version: 1,
+        name: 'เก่า',
+        sprites: { neutral: '/n.png', tired: '/t.png', shocked: 'https://x.test/s.png', pious: '' },
+        lines: {},
+    });
+    assert.deepEqual(c.images, [
+        { id: 'neutral', name: 'ปกติ', url: '/n.png' },
+        { id: 'tired', name: 'ปลง', url: '/t.png' },
+        { id: 'shocked', name: 'ตกใจ', url: 'https://x.test/s.png' },
+    ]);
+    const byMood = mood => RULES.filter(r => r.mood === mood).map(r => r.id);
+    for (const id of byMood('tired')) assert.equal(c.errorImages[id], 'tired');
+    for (const id of byMood('shocked')) assert.equal(c.errorImages[id], 'shocked');
+    assert.equal(c.errorImages.unknown, 'neutral');
+    // slots that had no image: no entry, so the first image is used
+    for (const id of byMood('pious')) assert.equal(c.errorImages[id], undefined);
+    // converting again changes nothing
+    assert.deepEqual(sanitizeCompanion(c), c);
 });
 
 test('export → import round trip', () => {
-    const c = sanitizeCompanion({ name: 'ฟ้า', color: '#336699', sprites: { pious: '/img/p.png' }, icon: 'https://x.test/i.png', crop: { x: 0.4, y: 0.3, size: 0.6 }, lines: { server: 'พังอีกแล้ว\n[4] พังจริง' } }, IDS);
+    const c = sanitizeCompanion({
+        name: 'ฟ้า', color: '#336699',
+        images: [{ id: 'a', name: 'ยิ้ม', url: '/img/a.png' }, { id: 'b', name: 'ร้องไห้', url: '/img/b.png' }],
+        errorImages: { server: 'b' },
+        icon: 'https://x.test/i.png', crop: { x: 0.4, y: 0.3, size: 0.6 },
+        lines: { server: 'พังอีกแล้ว\n[4] พังจริง' },
+    });
     const file = JSON.parse(JSON.stringify(exportCompanion({ ...c, id: 'local-only' })));
     assert.equal(file.type, 'error-companion');
-    assert.equal(file.version, 1);
+    assert.equal(file.version, 2);
     assert.equal(file.id, undefined);
-    assert.deepEqual(sanitizeCompanion(file, IDS), c);
+    assert.deepEqual(sanitizeCompanion(file), c);
 });
 
 test('inkFor picks readable text', () => {

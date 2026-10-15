@@ -54,6 +54,26 @@ export const RULES = [
         sample: { message: 'Google AI Studio API returned no candidate\nPrompt was blocked due to : PROHIBITED_CONTENT', title: 'Chat Completion API' },
     },
     {
+        id: 'prefill',
+        name: 'ข้อความสุดท้ายเป็นของบอท (prefill)',
+        mood: 'confused',
+        match: [
+            /end(s|ing)? with an? (model|assistant) (turn|message)|must end with a user (turn|message)|(assistant|model) (message )?prefill/i,
+        ],
+        lines: [
+            { from: 1, text: ['เอ๊ะ… จะให้พี่พูดต่อจากประโยคตัวเองเหรอครับ โมเดลนี้เขาไม่ยอมนะ', 'คิวพูดสุดท้ายต้องเป็นของเราครับ ไม่ใช่ของบอท', 'บทจบที่ฝั่งบอทอยู่ครับ เขาเลยไม่รู้จะตอบอะไร'] },
+            { from: 3, text: ['{n} รอบแล้วนะครับ ลองไปปิด prefill ดูก่อนไหม'] },
+        ],
+        title: 'ข้อความสุดท้ายที่ส่งไปเป็นของบอท แต่โมเดลนี้ไม่รับ',
+        what: 'prompt ที่ส่งไปลงท้ายด้วยข้อความฝั่งบอท (assistant / model) ซึ่งเป็นเทคนิค "prefill" ให้โมเดลพูดต่อจากคำที่เราใส่ไว้ แต่โมเดลรุ่นใหม่หลายตัว (เช่น Gemini บางรุ่น และ Claude บางรุ่น) ไม่รองรับแล้ว ต้องจบด้วยข้อความฝั่งผู้ใช้เท่านั้น',
+        fixes: [
+            'ถ้าเกิดตอนกด Continue: ปิด "Continue prefill" ในหน้า AI Response Configuration',
+            'ใน preset ถ้ามี prompt ท้ายสุดที่ตั้ง role เป็น AI / Assistant (มักชื่อ prefill) ให้ปิด หรือเปลี่ยน role เป็น User / System',
+            'ลบข้อความในช่อง Assistant Prefill (ของ Claude) หรือ Start Reply With (ใน Advanced Formatting)',
+        ],
+        sample: { message: 'Requests ending with a model turn are not supported.', title: 'Chat Completion API' },
+    },
+    {
         id: 'overloaded',
         name: 'เซิร์ฟเวอร์คนแน่น (503)',
         mood: 'tired',

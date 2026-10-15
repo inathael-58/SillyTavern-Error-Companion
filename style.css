@@ -594,16 +594,35 @@
     cursor: pointer;
 }
 
-.ec_settings .ec_ed_sprite {
+.ec_settings .ec_ed_images {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 6px;
     margin: 4px 0;
 }
 
-.ec_settings .ec_ed_sprite .ec_field {
+.ec_settings .ec_ed_img {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ec_settings .ec_ed_img_fields {
+    display: flex;
     flex: 1;
-    font-size: 0.9em;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.ec_settings .ec_ed_img_fields input {
+    margin: 0;
+}
+
+.ec_settings .ec_ed_delimg {
+    width: auto;
+    margin: 0;
+    padding: 4px 9px;
 }
 
 .ec_settings .ec_ed_thumb {
@@ -616,19 +635,54 @@
     background: rgba(0, 0, 0, 0.15);
 }
 
-.ec_settings .ec_ed_url.ec_bad {
+.ec_settings .ec_ed_thumb.ec_placeholder {
+    opacity: 0.3;
+}
+
+.ec_settings .ec_bad {
     outline: 2px solid #d9534f;
 }
 
-.ec_settings .ec_ed_lines summary {
+.ec_settings .ec_ed_rule summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 3px 0;
     cursor: pointer;
 }
 
-.ec_settings .ec_ed_lines textarea {
-    margin-bottom: 4px;
+.ec_settings .ec_ed_rule > .ec_field {
+    margin: 2px 0 6px 34px;
+}
+
+.ec_settings .ec_ed_rule textarea {
+    margin-bottom: 0;
+}
+
+.ec_settings .ec_ed_face.ec_ed_face_sm {
+    width: 28px;
+    height: 28px;
+    border-width: 1px;
 }
 
 .ec_settings .ec_ed_mark {
     opacity: 0.6;
+}
+
+.ec_settings .ec_ed_rule summary {
+    list-style: none;
+}
+
+.ec_settings .ec_ed_rule summary::-webkit-details-marker {
+    display: none;
+}
+
+.ec_settings .ec_ed_rule summary::before {
+    content: '▸';
+    width: 0.8em;
+    opacity: 0.6;
+}
+
+.ec_settings .ec_ed_rule[open] summary::before {
+    content: '▾';
 }
