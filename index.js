@@ -17,24 +17,24 @@
 
 import { RULES, UNKNOWN } from './errors.js';
 import {
-    COMPANION_TYPE, DEFAULT_COLOR, MOODS,
-    dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, pickLine, plainText, sanitizeCompanion,
+    COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, MOODS,
+    cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, pickLine, plainText,
+    sanitizeCompanion, sanitizeCrop,
 } from './lib.js';
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.2.0'; // keep in sync with manifest.json
+const VERSION = '0.2.1'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The built-in companion. Its sprites ship with the extension and its lines are the rules' own. */
 const TAWAN = Object.freeze({ id: 'tawan', name: 'ตะวัน', color: DEFAULT_COLOR, sprites: {}, lines: {} });
 const builtinSprite = mood => new URL(`sprites/tawan/${mood}.webp`, BASE_URL).href;
-/** Face centre in each of Tawan's 588×520 sprites, for the round crop in the small bubble. */
-const FACE = {
-    neutral: [278, 132], tired: [282, 125], pious: [278, 131],
-    exhausted: [262, 133], shocked: [280, 129], confused: [240, 147],
-};
-const SPRITE_W = 588;
+/** Tawan's head in each of his 588×520 sprites (centre and width), for the round icon in the small bubble. */
+const TAWAN_CROP = Object.fromEntries(Object.entries({
+    neutral: [278, 122], tired: [282, 115], pious: [278, 121],
+    exhausted: [262, 123], shocked: [280, 119], confused: [240, 137],
+}).map(([mood, [x, y]]) => [mood, { x: x / 588, y: y / 520, size: 280 / 588 }]));
 
 const MOOD_LABELS = {
     neutral: 'ปกติ · error ที่ไม่รู้จัก',
@@ -102,6 +102,36 @@ function activeCompanion() {
 function spriteFor(comp, mood) {
     const own = comp.sprites?.[mood] || comp.sprites?.neutral;
     return own ? { url: own, builtin: false } : { url: builtinSprite(mood), builtin: true };
+}
+
+/**
+ * The round icon for this mood: the companion's own icon image if it has one (fills the circle),
+ * else its sprite with its crop (Tawan's sprites: his per-mood crop).
+ * @returns {{ url: string, crop: { x: number, y: number, size: number } | null }} crop null = fill
+ */
+function iconFor(comp, mood) {
+    if (comp.icon) return { url: comp.icon, crop: null };
+    const sprite = spriteFor(comp, mood);
+    return { url: sprite.url, crop: sprite.builtin ? TAWAN_CROP[mood] : sanitizeCrop(comp.crop) };
+}
+
+/** Show `icon` inside `circle` (a d×d box, overflow hidden, holding one <img>). */
+function placeIcon(circle, icon, d) {
+    const img = circle.querySelector('img');
+    circle.classList.toggle('ec_icon_fill', !icon.crop);
+    const place = () => {
+        if (!icon.crop || !img.naturalWidth) {
+            img.style.width = img.style.left = img.style.top = '';
+            return;
+        }
+        const box = cropBox(icon.crop, img.naturalWidth, img.naturalHeight, d);
+        img.style.width = `${box.width}px`;
+        img.style.left = `${box.left}px`;
+        img.style.top = `${box.top}px`;
+    };
+    img.onload = place;
+    setSprite(img, icon.url);
+    if (img.complete) place();
 }
 
 const linesFor = (comp, rule) => (comp.lines?.[rule.id]?.length ? comp.lines[rule.id] : rule.lines);
@@ -379,22 +409,8 @@ function buildMini() {
 function openMini() {
     if (!mini) buildMini();
     const { rule, line, comp } = current;
-    const img = mini.querySelector('.ec_face img');
-    const sprite = spriteFor(comp, rule.mood);
-    setSprite(img, sprite.url);
-    img.alt = comp.name;
-    // Tawan's sprites: crop to his face; other images: cover the circle from the top
-    mini.querySelector('.ec_face').classList.toggle('ec_face_cover', !sprite.builtin);
-    if (sprite.builtin) {
-        const size = 64;
-        const k = size / 200; // show about 200px of the sprite around his face
-        const [fx, fy] = FACE[rule.mood] ?? FACE.neutral;
-        img.style.width = `${SPRITE_W * k}px`;
-        img.style.left = `${size / 2 - fx * k}px`;
-        img.style.top = `${size / 2 - fy * k}px`;
-    } else {
-        img.style.width = img.style.left = img.style.top = '';
-    }
+    mini.querySelector('.ec_face img').alt = comp.name;
+    placeIcon(mini.querySelector('.ec_face'), iconFor(comp, rule.mood), 64);
     applyColors(mini, comp);
     mini.querySelector('.ec_mini_who').textContent = comp.name;
     mini.querySelector('.ec_mini_line').textContent = line;
@@ -520,14 +536,14 @@ function renderSettingsList() {
     list.innerHTML = ALL_RULES.map(r => `
         <div class="ec_rule" data-rule="${r.id}">
             <label class="checkbox_label"><input type="checkbox" ${s.muted[r.id] ? '' : 'checked'}>
-                <img class="ec_rule_face" alt="" loading="lazy">
+                <span class="ec_rule_face"><img alt=""></span>
                 <span>${esc(r.name)}</span></label>
             <span class="ec_count" title="เจอวันนี้"></span>
             <div class="menu_button ec_try" title="ลองดู"><i class="fa-solid fa-play"></i></div>
         </div>`).join('');
     for (const row of list.querySelectorAll('[data-rule]')) {
         const rule = ruleById(/** @type {HTMLElement} */ (row).dataset.rule);
-        setSprite(row.querySelector('.ec_rule_face'), spriteFor(comp, rule.mood).url);
+        placeIcon(row.querySelector('.ec_rule_face'), iconFor(comp, rule.mood), 26);
     }
     renderSettingsCounts();
 }
@@ -676,6 +692,19 @@ function openEditor(comp, start) {
                     <input type="url" class="text_pole ec_ed_url" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
             </div>`).join('')}
 
+            <div class="ec_set_title">ไอคอนในแบบมินิ</div>
+            <small class="ec_note">เลื่อนให้หน้าอยู่กลางวง · ใช้ตำแหน่งเดียวกันทุกสีหน้า ดูให้ครบทุกวง</small>
+            <div class="ec_ed_faces">${MOODS.map(m => `<span class="ec_ed_face" data-mood="${m}" title="${esc(MOOD_LABELS[m])}"><img alt=""></span>`).join('')}</div>
+            <div class="ec_ed_sliders">
+                <label>ซ้าย ↔ ขวา <input type="range" id="ec_ed_cx" min="0" max="100" step="1"></label>
+                <label>ขึ้น ↕ ลง <input type="range" id="ec_ed_cy" min="0" max="100" step="1"></label>
+                <label>ซูม <input type="range" id="ec_ed_cz" min="0" max="90" step="1"></label>
+                <div id="ec_ed_crop_reset" class="menu_button" title="ตำแหน่งเริ่มต้น"><i class="fa-solid fa-rotate-left"></i></div>
+            </div>
+            <small id="ec_ed_cropnote" class="ec_note"></small>
+            <label class="ec_field">หรือใช้รูปไอคอนแยก <small class="ec_note ec_inline">(ไม่บังคับ · รูปหน้าตรง ๆ จะเต็มวงพอดี)</small>
+                <input type="url" id="ec_ed_icon" class="text_pole" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
+
             <div class="ec_set_title">บทพูด</div>
             <small class="ec_note">บรรทัดละประโยค (สุ่มมาหนึ่งประโยค) · ขึ้นต้นด้วย <code>[3]</code> = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · <code>{n}</code> = จำนวนครั้ง · ว่าง = ใช้บทของตะวัน · คำอธิบายใต้บทพูดใช้ของกลางเหมือนกันทุกตัว</small>
             ${ALL_RULES.map(r => `
@@ -699,6 +728,17 @@ function openEditor(comp, start) {
         input.value = c.sprites?.[mood] ?? '';
         input.addEventListener('input', updateThumbs);
     }
+    const crop = sanitizeCrop(c.crop);
+    const setCropInputs = k => {
+        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cx')).value = String(Math.round(k.x * 100));
+        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cy')).value = String(Math.round(k.y * 100));
+        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cz')).value = String(Math.round((1 - k.size) * 100));
+    };
+    setCropInputs(crop);
+    for (const id of ['#ec_ed_cx', '#ec_ed_cy', '#ec_ed_cz', '#ec_ed_icon']) box.querySelector(id).addEventListener('input', updateThumbs);
+    box.querySelector('#ec_ed_crop_reset').addEventListener('click', () => { setCropInputs(DEFAULT_CROP); updateThumbs(); });
+    /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value = c.icon ?? '';
+    box.querySelector('#ec_ed_color').addEventListener('input', updateThumbs);
     for (const det of box.querySelectorAll('.ec_ed_lines')) {
         const id = /** @type {HTMLElement} */ (det).dataset.rule;
         const area = /** @type {HTMLTextAreaElement} */ (det.querySelector('textarea'));
@@ -728,21 +768,41 @@ function markLines(det) {
     det.querySelector('.ec_ed_mark').textContent = filled ? '· เขียนเองแล้ว' : '';
 }
 
-/** Thumbnails show what each mood will use, including the fallbacks. */
+/** Crop as set by the sliders. */
+function editorCrop(box) {
+    const val = id => Number(/** @type {HTMLInputElement} */ (box.querySelector(id)).value);
+    return sanitizeCrop({ x: val('#ec_ed_cx') / 100, y: val('#ec_ed_cy') / 100, size: 1 - val('#ec_ed_cz') / 100 });
+}
+
+/** Thumbnails and round icons show what each mood will use, including the fallbacks. */
 function updateThumbs() {
     const box = $id('ec_editor');
-    const urls = {};
-    for (const input of box.querySelectorAll('.ec_ed_url')) {
-        const mood = /** @type {HTMLElement} */ (input.closest('[data-mood]')).dataset.mood;
+    const usable = input => {
         const url = /** @type {HTMLInputElement} */ (input).value.trim();
         const ok = !url || isSafeImageUrl(url);
         input.classList.toggle('ec_bad', !ok);
-        if (url && ok) urls[mood] = url;
+        return url && ok ? url : '';
+    };
+    const sprites = {};
+    for (const input of box.querySelectorAll('.ec_ed_url')) {
+        const url = usable(input);
+        if (url) sprites[/** @type {HTMLElement} */ (input.closest('[data-mood]')).dataset.mood] = url;
     }
+    const preview = { sprites, icon: usable(box.querySelector('#ec_ed_icon')), crop: editorCrop(box) };
     for (const row of box.querySelectorAll('.ec_ed_sprite')) {
-        const mood = /** @type {HTMLElement} */ (row).dataset.mood;
-        setSprite(row.querySelector('.ec_ed_thumb'), spriteFor({ sprites: urls }, mood).url);
+        setSprite(row.querySelector('.ec_ed_thumb'), spriteFor(preview, /** @type {HTMLElement} */ (row).dataset.mood).url);
     }
+    const color = /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value;
+    for (const face of box.querySelectorAll('.ec_ed_face')) {
+        /** @type {HTMLElement} */ (face).style.borderColor = color;
+        placeIcon(face, iconFor(preview, /** @type {HTMLElement} */ (face).dataset.mood), 48);
+    }
+    // the sliders only matter for the companion's own sprites
+    const own = !preview.icon && Object.keys(sprites).length > 0;
+    box.querySelector('.ec_ed_sliders').classList.toggle('ec_off', !own);
+    box.querySelector('#ec_ed_cropnote').textContent = preview.icon
+        ? 'ใช้รูปไอคอนแยกอยู่ (ลบลิงก์ไอคอนออกเพื่อกลับมาครอปจากรูปสีหน้า)'
+        : own ? '' : 'ยังไม่มีรูปของตัวเอง ใช้รูปและตำแหน่งของตะวัน';
 }
 
 /** Form → checked companion (without id), or null after telling the user what's wrong. */
@@ -752,6 +812,8 @@ function readEditor() {
         name: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value,
         color: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value,
         sprites: {},
+        icon: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value,
+        crop: editorCrop(box),
         lines: {},
     };
     for (const input of box.querySelectorAll('.ec_ed_url')) {
