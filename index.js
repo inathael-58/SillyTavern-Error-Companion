@@ -24,7 +24,7 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.3.0'; // keep in sync with manifest.json
+const VERSION = '0.3.1'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The built-in companion. Its sprites ship with the extension and its lines are the rules' own. */
@@ -252,6 +252,8 @@ function show(rule, raw, count, force, comp = activeCompanion()) {
         if (miniOpen()) armMiniTimer();
         return;
     }
+    // a vague follow-up ("could not get a reply") never covers the specific error it came with
+    if (rule.followup && current && current.rule !== rule && (fullOpen || miniOpen())) return;
     current = { rule, raw, count, comp, line: pickLine(linesFor(comp, rule), count), hits: 1 };
     const full = force ? force === 'full' : fullOpen || mode === 'full' || (mode === 'first' && count <= 1);
     if (full) openFull(); else openMini();
@@ -401,21 +403,25 @@ function buildMini() {
     mini.id = 'ec_mini';
     mini.hidden = true;
     mini.setAttribute('role', 'status');
+    // #ec_mini is a see-through layer the size of the screen; the card sits in its corner (see style.css)
     mini.innerHTML = `
-        <div class="ec_face"><img alt="" draggable="false"></div>
-        <div class="ec_bubble" title="แตะเพื่อดูคำอธิบาย">
-            <div class="ec_mini_name"><span class="ec_mini_who"></span> <span class="ec_badge"></span></div>
-            <div class="ec_mini_line"></div>
-            <div class="ec_mini_hint">แตะเพื่อดูว่าหมายถึงอะไร</div>
-        </div>
-        <div class="ec_mini_close fa-solid fa-xmark" title="ปิด" role="button" tabindex="0"></div>`;
+        <div class="ec_mini_card">
+            <div class="ec_face"><img alt="" draggable="false"></div>
+            <div class="ec_bubble" title="แตะเพื่อดูคำอธิบาย">
+                <div class="ec_mini_name"><span class="ec_mini_who"></span> <span class="ec_badge"></span></div>
+                <div class="ec_mini_line"></div>
+                <div class="ec_mini_hint">แตะเพื่อดูว่าหมายถึงอะไร</div>
+            </div>
+            <div class="ec_mini_close fa-solid fa-xmark" title="ปิด" role="button" tabindex="0"></div>
+        </div>`;
     document.body.append(mini);
     const expand = () => { if (current) { clearTimeout(miniTimer); openFull(); } };
     mini.querySelector('.ec_bubble').addEventListener('click', expand);
     mini.querySelector('.ec_face').addEventListener('click', expand);
     mini.querySelector('.ec_mini_close').addEventListener('click', () => { closeMini(); current = null; });
-    mini.addEventListener('mouseenter', () => clearTimeout(miniTimer));
-    mini.addEventListener('mouseleave', armMiniTimer);
+    const card = mini.querySelector('.ec_mini_card');
+    card.addEventListener('mouseenter', () => clearTimeout(miniTimer));
+    card.addEventListener('mouseleave', armMiniTimer);
 }
 
 function openMini() {

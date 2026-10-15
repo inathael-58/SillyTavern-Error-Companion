@@ -19,9 +19,21 @@
 
 /* ---------- full box ---------- */
 
-#ec_root {
+/*
+ * Both layers are pinned by their top-left corner and given the screen's size,
+ * never by bottom / inset: SillyTavern makes body position: fixed (so <html> is
+ * 0px tall) and puts translateZ(0) on <html>, which makes that 0px box the
+ * reference for position: fixed. Anything placed with bottom: … would land
+ * above the screen.
+ */
+#ec_root,
+#ec_mini {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
     z-index: 10000;
 }
 
@@ -55,11 +67,16 @@
     filter: drop-shadow(0 4px 10px var(--ec-shadow));
 }
 
+/*
+ * A fixed height, not a max-height: the sprite stands on the box's top edge, so a
+ * box that grew with a long explanation would push him up. Long text scrolls inside.
+ */
 #ec_root .ec_box {
     position: relative;
     display: flex;
     flex-direction: column;
-    max-height: min(56vh, 560px);
+    height: min(56vh, 560px);
+    height: min(56dvh, 560px);
     padding: 22px 18px 14px;
     border: 1px solid var(--ec-line);
     border-top: 3px solid var(--ec-sun);
@@ -109,6 +126,8 @@
 #ec_root .ec_say {
     flex: none;
     min-height: 2.8em;
+    max-height: 40%; /* a very long line (custom companions) scrolls instead of eating the box */
+    overflow-y: auto;
     padding-right: 20px;
     font-size: 1.3em;
     line-height: 1.45;
@@ -141,11 +160,14 @@
 
 #ec_root .ec_detail {
     display: none;
+    flex: 1 1 auto;
     min-height: 0;
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px dashed var(--ec-line);
     overflow-y: auto;
+    overscroll-behavior: contain; /* scrolling the explanation doesn't scroll the chat behind */
+    scrollbar-width: thin;
     line-height: 1.55;
 }
 
@@ -255,7 +277,8 @@
     }
 
     #ec_root .ec_box {
-        max-height: 60vh;
+        height: 60vh;
+        height: 60dvh;
         padding: 20px 12px 12px;
     }
 
@@ -269,18 +292,42 @@
     }
 }
 
+/* short screens (phones held sideways): smaller sprite, taller box, so the explanation has room */
+@media (max-height: 480px) {
+    #ec_root .ec_sprite {
+        height: 28vh;
+        height: 28dvh;
+    }
+
+    #ec_root .ec_box {
+        height: 68vh;
+        height: 68dvh;
+        padding-top: 18px;
+    }
+
+    #ec_root .ec_say {
+        min-height: 0;
+        font-size: 1.1em;
+    }
+}
+
 /* ---------- small bubble ---------- */
 
+/* the layer lets taps through; only the card takes them */
 #ec_mini {
-    position: fixed;
+    pointer-events: none;
+}
+
+#ec_mini .ec_mini_card {
+    position: absolute;
     right: 12px;
     bottom: calc(var(--bottomFormBlockSize, 50px) + 18px);
-    z-index: 10000;
     display: flex;
     flex-direction: row-reverse;
     align-items: flex-end;
     gap: 8px;
     max-width: min(380px, calc(100vw - 24px));
+    pointer-events: auto;
 }
 
 #ec_mini .ec_face {
@@ -355,7 +402,7 @@
     opacity: 1;
 }
 
-#ec_mini.ec_in {
+#ec_mini.ec_in .ec_mini_card {
     animation: ec_rise 0.3s ease-out;
 }
 
@@ -386,7 +433,7 @@
     #ec_root.ec_in .ec_box,
     #ec_root.ec_done .ec_detail,
     #ec_root.ec_done .ec_next,
-    #ec_mini.ec_in {
+    #ec_mini.ec_in .ec_mini_card {
         animation: none;
     }
 }
