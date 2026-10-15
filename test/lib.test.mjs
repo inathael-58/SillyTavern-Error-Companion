@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { RULES, UNKNOWN } from '../errors.js';
-import { dayKey, graphemes, matchRule, pickLine, plainText } from '../lib.js';
+import { DEFAULT_COLOR, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, parseLines, pickLine, plainText, sanitizeCompanion } from '../lib.js';
 
 const id = (message, title = 'Chat Completion API', opts) => matchRule(message, title, opts)?.id ?? null;
 
@@ -68,10 +68,12 @@ test('ordinary words do not trigger rules', () => {
 
 test('pickLine uses the highest tier reached and fills {n}', () => {
     const rule = RULES.find(r => r.id === 'overloaded');
-    assert.equal(pickLine(rule, 1, () => 0), rule.lines[0].text[0]);
-    assert.equal(pickLine(rule, 3, () => 0), 'ออกไปแตะหญ้าเถอะครับ');
-    assert.match(pickLine(rule, 9, () => 0.99), /9 ครั้ง/);
-    assert.equal(pickLine(UNKNOWN, 50, () => 0), UNKNOWN.lines[0].text[0]);
+    assert.equal(pickLine(rule.lines, 1, () => 0), rule.lines[0].text[0]);
+    assert.equal(pickLine(rule.lines, 3, () => 0), 'ออกไปแตะหญ้าเถอะครับ');
+    assert.match(pickLine(rule.lines, 9, () => 0.99), /9 ครั้ง/);
+    assert.equal(pickLine(UNKNOWN.lines, 50, () => 0), UNKNOWN.lines[0].text[0]);
+    // only later tiers: the first one is used until it is reached
+    assert.equal(pickLine([{ from: 3, text: ['x'] }], 1, () => 0), 'x');
 });
 
 test('every rule is complete', () => {
@@ -98,4 +100,77 @@ test('graphemes keep Thai marks with their consonant', () => {
 
 test('dayKey is the local date', () => {
     assert.equal(dayKey(new Date(2026, 0, 5, 23, 59)), '2026-01-05');
+});
+
+const IDS = [...RULES, UNKNOWN].map(r => r.id);
+
+test('parseLines / formatLines', () => {
+    const tiers = parseLines('  ร้านเต็มครับ \n\n[3] แตะหญ้า\n[3+] ดื่มน้ำ\n[10]   \n[8]ครั้งที่ {n}\nอีกประโยค');
+    assert.deepEqual(tiers, [
+        { from: 1, text: ['ร้านเต็มครับ', 'อีกประโยค'] },
+        { from: 3, text: ['แตะหญ้า', 'ดื่มน้ำ'] },
+        { from: 8, text: ['ครั้งที่ {n}'] },
+    ]);
+    assert.deepEqual(parseLines(formatLines(tiers)), tiers);
+    assert.deepEqual(parseLines(''), []);
+    assert.equal(formatLines(RULES[1].lines).split('\n')[0], RULES[1].lines[0].text[0]);
+});
+
+test('isSafeImageUrl', () => {
+    for (const ok of ['https://i.imgur.com/a.png', 'http://localhost:8000/x.webp', '/characters/Seraphina/joy.png', 'user/images/a b.png', 'data:image/png;base64,iVBORw0KGgo=']) {
+        assert.ok(isSafeImageUrl(ok), ok);
+    }
+    for (const bad of ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'data:text/html;base64,PHNjcmlwdD4=', 'file:///etc/passwd', '//evil.example/a.png', 'vbscript:x', '', null]) {
+        assert.ok(!isSafeImageUrl(bad), String(bad));
+    }
+});
+
+test('sanitizeCompanion cleans and validates', () => {
+    const c = sanitizeCompanion({
+        type: 'error-companion',
+        name: '  พี่หมอก  ',
+        color: '#ABCDEF',
+        sprites: { neutral: ' https://x.test/n.png ', tired: '', weird: 'https://x.test/w.png' },
+        lines: {
+            overloaded: [{ from: 1, text: ['เต็มอีกแล้ว'] }, { from: 3, text: ['ไปนอนเถอะ', 42] }],
+            blocked: 'สารภาพมา\n[2] อีกแล้วเหรอ',
+            quota: ['หมดแล้ว', 'หมดจริง'],
+            nonsense: ['x'],
+            empty: [],
+        },
+        extra: 'dropped',
+    }, IDS);
+    assert.deepEqual(c, {
+        name: 'พี่หมอก',
+        color: '#abcdef',
+        sprites: { neutral: 'https://x.test/n.png' },
+        lines: {
+            overloaded: [{ from: 1, text: ['เต็มอีกแล้ว'] }, { from: 3, text: ['ไปนอนเถอะ'] }],
+            blocked: [{ from: 1, text: ['สารภาพมา'] }, { from: 2, text: ['อีกแล้วเหรอ'] }],
+            quota: [{ from: 1, text: ['หมดแล้ว', 'หมดจริง'] }],
+        },
+    });
+    assert.equal(sanitizeCompanion({ name: 'a', color: 'red' }, IDS).color, DEFAULT_COLOR);
+    assert.throws(() => sanitizeCompanion({ name: '' }, IDS), /ชื่อ/);
+    assert.throws(() => sanitizeCompanion({ type: 'chara_card_v2', name: 'x' }, IDS), /ไม่ใช่ไฟล์/);
+    assert.throws(() => sanitizeCompanion([], IDS), /ไม่ใช่ไฟล์/);
+    assert.throws(() => sanitizeCompanion({ name: 'x', sprites: { shocked: 'javascript:alert(1)' } }, IDS), /shocked/);
+    // at most 50 lines per error
+    const many = sanitizeCompanion({ name: 'x', lines: { network: Array.from({ length: 80 }, (_, i) => `l${i}`) } }, IDS);
+    assert.equal(many.lines.network[0].text.length, 50);
+});
+
+test('export → import round trip', () => {
+    const c = sanitizeCompanion({ name: 'ฟ้า', color: '#336699', sprites: { pious: '/img/p.png' }, lines: { server: 'พังอีกแล้ว\n[4] พังจริง' } }, IDS);
+    const file = JSON.parse(JSON.stringify(exportCompanion({ ...c, id: 'local-only' })));
+    assert.equal(file.type, 'error-companion');
+    assert.equal(file.version, 1);
+    assert.equal(file.id, undefined);
+    assert.deepEqual(sanitizeCompanion(file, IDS), c);
+});
+
+test('inkFor picks readable text', () => {
+    assert.equal(inkFor('#f2a03d'), '#1e1e1e');
+    assert.equal(inkFor('#1b2a4a'), '#ffffff');
+    assert.equal(inkFor('nope'), '#1e1e1e');
 });
