@@ -75,6 +75,13 @@ export function graphemes(text) {
 export const MOODS = ['neutral', 'tired', 'pious', 'exhausted', 'shocked', 'confused'];
 export const COMPANION_TYPE = 'error-companion';
 export const DEFAULT_COLOR = '#f2a03d';
+/**
+ * Round icon in the small bubble: which part of the image to show.
+ * x, y = the point (fraction of image width / height) put at the circle's centre;
+ * size = how much of the image width the circle spans (smaller = closer).
+ * The default fits the head of a typical half-body sprite.
+ */
+export const DEFAULT_CROP = Object.freeze({ x: 0.5, y: 0.22, size: 0.5 });
 
 const MAX_NAME = 40;
 const MAX_LINES = 50;
@@ -124,7 +131,7 @@ export function isSafeImageUrl(url) {
  * Unknown keys and unknown error ids are dropped; bad values throw with a message for the user.
  * @param {any} raw
  * @param {string[]} ruleIds error ids that may have lines
- * @returns {{ name: string, color: string, sprites: Record<string, string>, lines: Record<string, { from: number, text: string[] }[]> }}
+ * @returns {{ name: string, color: string, sprites: Record<string, string>, icon?: string, crop: { x: number, y: number, size: number }, lines: Record<string, { from: number, text: string[] }[]> }}
  */
 export function sanitizeCompanion(raw, ruleIds) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('ไม่ใช่ไฟล์คอมพาเนียน');
@@ -169,7 +176,39 @@ export function sanitizeCompanion(raw, ruleIds) {
         }).filter(t => t.text.length);
         if (tiers.length) lines[id] = tiers;
     }
-    return { name, color, sprites, lines };
+    let icon;
+    if (typeof raw.icon === 'string' && raw.icon.trim()) {
+        icon = raw.icon.trim();
+        if (!isSafeImageUrl(icon)) throw new Error('รูปไอคอน: ใช้ได้แค่ลิงก์ https:// หรือที่อยู่ไฟล์ในเซิร์ฟเวอร์ SillyTavern');
+    }
+    const out = { name, color, sprites, lines, crop: sanitizeCrop(raw.crop) };
+    if (icon) out.icon = icon;
+    return out;
+}
+
+/** Any crop-ish value → a crop within range (missing parts from DEFAULT_CROP). */
+export function sanitizeCrop(raw) {
+    const num = (v, lo, hi, dflt) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n * 1000) / 1000)) : dflt;
+    };
+    const c = raw && typeof raw === 'object' ? raw : {};
+    return {
+        x: num(c.x, 0, 1, DEFAULT_CROP.x),
+        y: num(c.y, 0, 1, DEFAULT_CROP.y),
+        size: num(c.size, 0.1, 1, DEFAULT_CROP.size),
+    };
+}
+
+/**
+ * Where to put an image of natW × natH inside a circle of diameter d so that
+ * crop.x / crop.y sits at the centre and crop.size of the image width spans the circle.
+ * @returns {{ width: number, left: number, top: number }} px, for an absolutely placed <img>
+ */
+export function cropBox(crop, natW, natH, d) {
+    const width = d / crop.size;
+    const height = natW ? width * (natH / natW) : width;
+    return { width, left: d / 2 - crop.x * width, top: d / 2 - crop.y * height };
 }
 
 /** What goes into a shared file. */
@@ -180,6 +219,8 @@ export function exportCompanion(companion) {
         name: companion.name,
         color: companion.color,
         sprites: { ...companion.sprites },
+        ...(companion.icon ? { icon: companion.icon } : {}),
+        crop: sanitizeCrop(companion.crop),
         lines: structuredClone(companion.lines ?? {}),
     };
 }

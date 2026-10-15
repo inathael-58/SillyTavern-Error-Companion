@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { RULES, UNKNOWN } from '../errors.js';
-import { DEFAULT_COLOR, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, parseLines, pickLine, plainText, sanitizeCompanion } from '../lib.js';
+import { DEFAULT_COLOR, DEFAULT_CROP, cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, parseLines, pickLine, plainText, sanitizeCompanion, sanitizeCrop } from '../lib.js';
 
 const id = (message, title = 'Chat Completion API', opts) => matchRule(message, title, opts)?.id ?? null;
 
@@ -149,19 +149,23 @@ test('sanitizeCompanion cleans and validates', () => {
             blocked: [{ from: 1, text: ['สารภาพมา'] }, { from: 2, text: ['อีกแล้วเหรอ'] }],
             quota: [{ from: 1, text: ['หมดแล้ว', 'หมดจริง'] }],
         },
+        crop: { ...DEFAULT_CROP },
     });
     assert.equal(sanitizeCompanion({ name: 'a', color: 'red' }, IDS).color, DEFAULT_COLOR);
     assert.throws(() => sanitizeCompanion({ name: '' }, IDS), /ชื่อ/);
     assert.throws(() => sanitizeCompanion({ type: 'chara_card_v2', name: 'x' }, IDS), /ไม่ใช่ไฟล์/);
     assert.throws(() => sanitizeCompanion([], IDS), /ไม่ใช่ไฟล์/);
     assert.throws(() => sanitizeCompanion({ name: 'x', sprites: { shocked: 'javascript:alert(1)' } }, IDS), /shocked/);
+    assert.throws(() => sanitizeCompanion({ name: 'x', icon: 'javascript:alert(1)' }, IDS), /ไอคอน/);
+    assert.equal(sanitizeCompanion({ name: 'x', icon: ' /img/face.png ' }, IDS).icon, '/img/face.png');
+    assert.equal('icon' in sanitizeCompanion({ name: 'x', icon: '' }, IDS), false);
     // at most 50 lines per error
     const many = sanitizeCompanion({ name: 'x', lines: { network: Array.from({ length: 80 }, (_, i) => `l${i}`) } }, IDS);
     assert.equal(many.lines.network[0].text.length, 50);
 });
 
 test('export → import round trip', () => {
-    const c = sanitizeCompanion({ name: 'ฟ้า', color: '#336699', sprites: { pious: '/img/p.png' }, lines: { server: 'พังอีกแล้ว\n[4] พังจริง' } }, IDS);
+    const c = sanitizeCompanion({ name: 'ฟ้า', color: '#336699', sprites: { pious: '/img/p.png' }, icon: 'https://x.test/i.png', crop: { x: 0.4, y: 0.3, size: 0.6 }, lines: { server: 'พังอีกแล้ว\n[4] พังจริง' } }, IDS);
     const file = JSON.parse(JSON.stringify(exportCompanion({ ...c, id: 'local-only' })));
     assert.equal(file.type, 'error-companion');
     assert.equal(file.version, 1);
@@ -173,4 +177,20 @@ test('inkFor picks readable text', () => {
     assert.equal(inkFor('#f2a03d'), '#1e1e1e');
     assert.equal(inkFor('#1b2a4a'), '#ffffff');
     assert.equal(inkFor('nope'), '#1e1e1e');
+});
+
+test('sanitizeCrop clamps and fills in', () => {
+    assert.deepEqual(sanitizeCrop(undefined), DEFAULT_CROP);
+    assert.deepEqual(sanitizeCrop({ x: -1, y: 2, size: 0 }), { x: 0, y: 1, size: 0.1 });
+    assert.deepEqual(sanitizeCrop({ x: '0.25', size: 'big' }), { x: 0.25, y: DEFAULT_CROP.y, size: DEFAULT_CROP.size });
+});
+
+test('cropBox puts the chosen point at the centre', () => {
+    // 600×400 image, show half its width in a 60px circle, centred on (0.5, 0.25)
+    const b = cropBox({ x: 0.5, y: 0.25, size: 0.5 }, 600, 400, 60);
+    assert.equal(b.width, 120);             // image drawn 120px wide (80px tall)
+    assert.equal(b.left + 0.5 * 120, 30);   // x point at the centre
+    assert.equal(b.top + 0.25 * 80, 30);    // y point at the centre
+    // whole image width across the circle
+    assert.equal(cropBox({ x: 0.5, y: 0.5, size: 1 }, 100, 100, 64).left, 0);
 });

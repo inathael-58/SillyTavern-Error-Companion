@@ -303,13 +303,13 @@
     pointer-events: none;
 }
 
-/* someone else's image: fill the circle from the top instead of Tawan's face crop */
-#ec_mini .ec_face.ec_face_cover img {
+/* a separate icon image: fill the circle */
+#ec_mini .ec_face.ec_icon_fill img,
+.ec_settings .ec_icon_fill img {
     inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: 50% 8%;
 }
 
 #ec_mini .ec_bubble {
@@ -432,13 +432,69 @@
     align-items: center;
 }
 
+/* round crops: a fixed-size box with the image placed inside by placeIcon() */
+.ec_settings .ec_rule_face,
+.ec_settings .ec_ed_face {
+    position: relative;
+    flex: none;
+    overflow: hidden;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.15);
+}
+
 .ec_settings .ec_rule_face {
     width: 26px;
     height: 26px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: 48% 6%;
-    background: rgba(0, 0, 0, 0.15);
+}
+
+.ec_settings .ec_ed_face {
+    width: 48px;
+    height: 48px;
+    border: 2px solid var(--ec-sun, #f2a03d);
+    box-sizing: content-box;
+}
+
+.ec_settings .ec_rule_face img,
+.ec_settings .ec_ed_face img {
+    position: absolute;
+    max-width: none;
+    height: auto;
+}
+
+.ec_settings .ec_ed_faces {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 6px;
+}
+
+.ec_settings .ec_ed_sliders {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    align-items: end;
+    gap: 8px;
+    font-size: 0.85em;
+}
+
+.ec_settings .ec_ed_sliders label {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.ec_settings .ec_ed_sliders input {
+    width: 100%;
+}
+
+.ec_settings .ec_ed_sliders .menu_button {
+    width: auto;
+    margin: 0;
+    padding: 4px 8px;
+}
+
+.ec_settings .ec_ed_sliders.ec_off {
+    opacity: 0.4;
+    pointer-events: none;
 }
 
 .ec_settings .ec_count {
