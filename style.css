@@ -51,14 +51,13 @@
 
 /*
  * Visual-novel layout. The stage spans the screen height; the box sits at its
- * bottom and the sprite stands behind the box with his lower part hidden by it,
- * which also keeps him low, away from SillyTavern's toasts at the top. All sizes are
- * shares of the stage height (set per screen shape below).
+ * bottom and the sprite stands right on it (his flat waist cut on the box's top
+ * edge). Sizes are shares of the stage height, set per screen shape below and
+ * measured in SillyTavern so his head stays below a typical toast.
  */
 #ec_root {
-    --ec-box-h: min(46%, 440px);
-    --ec-sprite-h: min(50%, 460px);
-    --ec-sink: 0.4; /* share of the sprite hidden behind the box: head to chest shows, like a VN */
+    --ec-box-h: min(44%, 420px);
+    --ec-sprite-h: min(27%, 300px);
 }
 
 #ec_root .ec_stage {
@@ -78,7 +77,7 @@
     position: absolute;
     left: 50%;
     translate: -50% 0; /* not transform: the entrance animation uses that */
-    bottom: calc(var(--ec-box-h) - var(--ec-sprite-h) * var(--ec-sink));
+    bottom: calc(var(--ec-box-h) - 1px); /* 1px into the border so no gap shows */
     height: var(--ec-sprite-h);
     width: auto;
     max-width: 100%;
@@ -306,8 +305,8 @@
 
 @media (max-width: 600px) {
     #ec_root {
-        --ec-box-h: 46%;
-        --ec-sprite-h: 34%;
+        --ec-box-h: 44%;
+        --ec-sprite-h: 26%;
     }
 
     #ec_root .ec_box {
@@ -327,7 +326,7 @@
 /* short screens (phones held sideways): smaller sprite, taller box, so the explanation has room */
 @media (max-height: 480px) {
     #ec_root {
-        --ec-box-h: 62%;
+        --ec-box-h: 60%;
         --ec-sprite-h: 34%;
     }
 

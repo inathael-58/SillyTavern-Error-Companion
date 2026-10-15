@@ -24,7 +24,7 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.3.2'; // keep in sync with manifest.json
+const VERSION = '0.3.3'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The built-in companion. Its sprites ship with the extension and its lines are the rules' own. */
