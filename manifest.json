@@ -1,0 +1,12 @@
+{
+    "display_name": "Error Companion",
+    "loading_order": 2300,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Kitima",
+    "version": "0.1.0",
+    "homePage": "https://github.com/inathael-58/SillyTavern-Error-Companion-",
+    "auto_update": false
+}
