@@ -37,27 +37,49 @@
     z-index: 10000;
 }
 
+/* the full box is the focus: above SillyTavern's toasts (z-index 999999), whose
+   text it already shows, so a long toast doesn't sit on the sprite's head */
+#ec_root {
+    z-index: 1000000;
+}
+
 #ec_root .ec_backdrop {
     position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, 0.3);
 }
 
-#ec_root .ec_stage {
-    position: absolute;
-    left: 50%;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    transform: translateX(-50%);
-    width: min(760px, calc(100vw - 16px));
+/*
+ * Visual-novel layout. The stage spans the screen height; the box sits at its
+ * bottom and the sprite stands behind the box with his lower part hidden by it,
+ * which also keeps him low, away from SillyTavern's toasts at the top. All sizes are
+ * shares of the stage height (set per screen shape below).
+ */
+#ec_root {
+    --ec-box-h: min(46%, 440px);
+    --ec-sprite-h: min(50%, 460px);
+    --ec-sink: 0.4; /* share of the sprite hidden behind the box: head to chest shows, like a VN */
 }
 
-/* centred, standing behind the box; the flat waist cut sits on the box's top edge */
+#ec_root .ec_stage {
+    position: absolute;
+    top: 0;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(760px, calc(100vw - 16px));
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    pointer-events: none; /* taps on the empty part reach the backdrop */
+}
+
 #ec_root .ec_sprite {
     position: absolute;
     left: 50%;
     translate: -50% 0; /* not transform: the entrance animation uses that */
-    bottom: calc(100% - 1px);
-    height: min(40vh, 400px);
+    bottom: calc(var(--ec-box-h) - var(--ec-sprite-h) * var(--ec-sink));
+    height: var(--ec-sprite-h);
     width: auto;
     max-width: 100%;
     object-fit: contain;
@@ -68,15 +90,16 @@
 }
 
 /*
- * A fixed height, not a max-height: the sprite stands on the box's top edge, so a
- * box that grew with a long explanation would push him up. Long text scrolls inside.
+ * A fixed height, not a max-height: the sprite stands on the box, so a box that
+ * grew with a long explanation would push him up. Long text scrolls inside.
  */
 #ec_root .ec_box {
     position: relative;
+    isolation: isolate;
     display: flex;
     flex-direction: column;
-    height: min(56vh, 560px);
-    height: min(56dvh, 560px);
+    height: var(--ec-box-h);
+    pointer-events: auto;
     padding: 22px 18px 14px;
     border: 1px solid var(--ec-line);
     border-top: 3px solid var(--ec-sun);
@@ -85,6 +108,16 @@
     backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 10px));
     box-shadow: 0 6px 24px var(--ec-shadow);
+}
+
+#ec_root .ec_box::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--ec-bg);
+    pointer-events: none;
 }
 
 #ec_root .ec_nameplate {
@@ -272,13 +305,12 @@
 }
 
 @media (max-width: 600px) {
-    #ec_root .ec_sprite {
-        height: min(30vh, 250px);
+    #ec_root {
+        --ec-box-h: 46%;
+        --ec-sprite-h: 34%;
     }
 
     #ec_root .ec_box {
-        height: 60vh;
-        height: 60dvh;
         padding: 20px 12px 12px;
     }
 
@@ -294,14 +326,12 @@
 
 /* short screens (phones held sideways): smaller sprite, taller box, so the explanation has room */
 @media (max-height: 480px) {
-    #ec_root .ec_sprite {
-        height: 28vh;
-        height: 28dvh;
+    #ec_root {
+        --ec-box-h: 62%;
+        --ec-sprite-h: 34%;
     }
 
     #ec_root .ec_box {
-        height: 68vh;
-        height: 68dvh;
         padding-top: 18px;
     }
 
