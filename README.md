@@ -11,6 +11,7 @@
 | error | ตัวอย่างข้อความ |
 |---|---|
 | โดนตัวกรองเนื้อหาบล็อก | `Prompt was blocked due to : PROHIBITED_CONTENT`, moderation ของ OpenRouter |
+| ข้อความสุดท้ายเป็นของบอท (prefill) | `Requests ending with a model turn are not supported`, `must end with a user message` |
 | เซิร์ฟเวอร์คนแน่น (503 / 529) | `The model is overloaded`, `high demand` |
 | โควตาหมด / ส่งถี่เกิน (429) | `You exceeded your current quota`, `Rate limit exceeded` |
 | เครดิตหมด (402) | `Insufficient credits`, `can only afford` |
@@ -53,15 +54,15 @@ Extensions → Error Companion → คอมพาเนียน
 
 - **＋** สร้างใหม่ · **✎** แก้ไข (กดตอนเลือกตะวันอยู่ = สร้างตัวใหม่โดยเริ่มจากบทพูดของตะวัน) · **🗑** ลบ
 - **ชื่อ** และ **สีป้ายชื่อ**
-- **รูป 6 สีหน้า** เป็น URL: ปกติ, ปลง, สำรวม, หมดแรง, ตกใจ, งง
-  - ช่องที่ว่างใช้รูป "ปกติ" แทน · ว่างทั้งหมด = ใช้รูปของตะวัน (ทำแค่ชุดบทพูดก็ได้)
+- **รูป** เพิ่มได้กี่รูปก็ได้ (สูงสุด 40) แต่ละรูปมีชื่อกับลิงก์
+  - รูปแรก = รูปเริ่มต้นของ error ที่ไม่ได้เลือกรูป · ไม่มีรูปเลย = ใช้รูปของตะวัน (ทำแค่ชุดบทพูดก็ได้)
   - ใช้ได้ทั้งลิงก์ `https://…` และไฟล์ในเซิร์ฟเวอร์ ST เช่น `/characters/ชื่อ/joy.png` (รูปของ Character Expressions)
   - ภาพครึ่งตัว พื้นหลังโปร่งใส ขอบล่างตัดตรง จะดูดีที่สุด
 - **ไอคอนในแบบมินิ** (วงกลมข้างฟองคำพูด)
-  - เลื่อนแถบ ซ้าย↔ขวา / ขึ้น↕ลง / ซูม ให้หน้าอยู่กลางวง มีพรีวิวครบทุกสีหน้า (ใช้ตำแหน่งเดียวกันทุกรูป)
+  - เลื่อนแถบ ซ้าย↔ขวา / ขึ้น↕ลง / ซูม ให้หน้าอยู่กลางวง มีพรีวิวครบทุกรูป (ใช้ตำแหน่งเดียวกันทุกรูป)
   - หรือใส่ลิงก์ **รูปไอคอนแยก** (รูปหน้าตรง ๆ) แทนการครอป
-- **บทพูดต่อ error** บรรทัดละประโยค สุ่มมาหนึ่งประโยค
-  - ขึ้นต้นด้วย `[3]` = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · `{n}` = จำนวนครั้ง
+- **error แต่ละแบบ** เลือกได้ว่าจะใช้รูปไหน และเขียนบทพูดเอง
+  - บทพูดบรรทัดละประโยค สุ่มมาหนึ่งประโยค · ขึ้นต้นด้วย `[3]` = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · `{n}` = จำนวนครั้ง
   - ว่าง = ใช้บทของตะวัน · คำอธิบายจริงจังด้านล่างใช้ของกลางเหมือนกันทุกตัว
 - **ลองดู** ได้ก่อนบันทึก
 
@@ -75,10 +76,14 @@ Extensions → Error Companion → คอมพาเนียน
 ```json
 {
   "type": "error-companion",
-  "version": 1,
+  "version": 2,
   "name": "พี่ฟ้า",
   "color": "#3b6ea8",
-  "sprites": { "neutral": "https://…/neutral.png", "tired": "https://…/tired.png" },
+  "images": [
+    { "id": "smile", "name": "ยิ้ม", "url": "https://…/smile.png" },
+    { "id": "sleepy", "name": "ง่วง", "url": "https://…/sleepy.png" }
+  ],
+  "errorImages": { "overloaded": "sleepy", "quota": "sleepy" },
   "crop": { "x": 0.5, "y": 0.22, "size": 0.5 },
   "lines": {
     "overloaded": [
@@ -89,14 +94,16 @@ Extensions → Error Companion → คอมพาเนียน
 }
 ```
 
-`crop` = จุดที่อยู่กลางวงไอคอน (`x`, `y` เป็นสัดส่วนของความกว้าง / สูงของรูป) และ `size` = วงกว้างกี่ส่วนของความกว้างรูป (น้อย = ซูมเข้า) · ใส่ `"icon": "https://…"` เพื่อใช้รูปไอคอนแยกแทน
+`errorImages` = error ไหนใช้รูปไหน (อ้างด้วย `id` ของรูป · ไม่ระบุ = รูปแรก) · `crop` = จุดที่อยู่กลางวงไอคอน (`x`, `y` เป็นสัดส่วนของความกว้าง / สูงของรูป) และ `size` = วงกว้างกี่ส่วนของความกว้างรูป (น้อย = ซูมเข้า) · ใส่ `"icon": "https://…"` เพื่อใช้รูปไอคอนแยกแทน
 
-id ของ error ที่ใช้ใน `lines`: `blocked`, `overloaded`, `quota`, `credits`, `key`, `location`, `context`, `empty`, `model`, `network`, `server`, `unknown`
+ไฟล์แบบเก่า (`version: 1` ที่มี `sprites` 6 ช่อง) ยังนำเข้าได้ จะถูกแปลงเป็นรูป 6 รูปตามชื่อช่องเดิมให้อัตโนมัติ
+
+id ของ error ที่ใช้ใน `lines` และ `errorImages`: `blocked`, `prefill`, `overloaded`, `quota`, `credits`, `key`, `location`, `context`, `empty`, `model`, `network`, `server`, `unknown`
 
 ## ลองดู
 
 - กด ▶ หน้า error ในหน้าตั้งค่า
-- หรือพิมพ์ `/ec-test overloaded` ในช่องแชท (ใส่ id ของ error: `blocked`, `overloaded`, `quota`, `credits`, `key`, `location`, `context`, `empty`, `model`, `network`, `server`, `unknown` · ว่าง = สุ่ม)
+- หรือพิมพ์ `/ec-test overloaded` ในช่องแชท (ใส่ id ของ error: `blocked`, `prefill`, `overloaded`, `quota`, `credits`, `key`, `location`, `context`, `empty`, `model`, `network`, `server`, `unknown` · ว่าง = สุ่ม)
   คำสั่งนี้สร้าง error toast จริง เลยผ่านเส้นทางเดียวกับ error จริงทุกอย่าง (และนับเป็นหนึ่งครั้งด้วย)
 
 ## สำหรับคนพัฒนา

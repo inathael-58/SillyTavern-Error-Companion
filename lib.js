@@ -126,63 +126,108 @@ export function isSafeImageUrl(url) {
     return !/^[a-z][a-z0-9+.-]*:/i.test(url) && !url.startsWith('//'); // relative path on this server
 }
 
+/** Names given to the six fixed image slots of version-1 companions when they are converted. */
+export const MOOD_NAMES = { neutral: 'ปกติ', tired: 'ปลง', pious: 'สำรวม', exhausted: 'หมดแรง', shocked: 'ตกใจ', confused: 'งง' };
+const MAX_IMAGES = 40;
+const MAX_IMAGE_NAME = 30;
+
+const badUrl = what => new Error(`${what}: ใช้ได้แค่ลิงก์ https:// หรือที่อยู่ไฟล์ในเซิร์ฟเวอร์ SillyTavern`);
+
+/** "[{from, text}]", a plain list of sentences, or editor text → tiers (capped). */
+function cleanTiers(value) {
+    let tiers;
+    if (typeof value === 'string') {
+        tiers = parseLines(value);
+    } else if (Array.isArray(value)) {
+        const text = value.flatMap(t => {
+            if (typeof t === 'string') return [t];
+            if (!t || !Array.isArray(t.text)) return [];
+            const from = Number.isFinite(Number(t.from)) ? Math.max(1, Math.floor(Number(t.from))) : 1;
+            return t.text.filter(x => typeof x === 'string').map(x => (from > 1 ? `[${from}] ${x}` : x));
+        });
+        tiers = parseLines(text.join('\n'));
+    } else {
+        return [];
+    }
+    let left = MAX_LINES;
+    return tiers.map(t => {
+        const text = t.text.slice(0, Math.max(0, left));
+        left -= text.length;
+        return { from: t.from, text };
+    }).filter(t => t.text.length);
+}
+
 /**
  * Check and clean a companion (from the editor or an imported file).
  * Unknown keys and unknown error ids are dropped; bad values throw with a message for the user.
+ *
+ * Shape: any number of named images, and per error which image to show
+ * (`errorImages`, missing = the first image) and its own lines (missing = Tawan's).
+ * Version-1 files had six fixed slots (`sprites: { neutral, tired, … }`); those
+ * become images named after the slot, used by the errors that slot was for.
+ *
  * @param {any} raw
- * @param {string[]} ruleIds error ids that may have lines
- * @returns {{ name: string, color: string, sprites: Record<string, string>, icon?: string, crop: { x: number, y: number, size: number }, lines: Record<string, { from: number, text: string[] }[]> }}
+ * @param {{ id: string, mood: string }[]} [rules] errors that may have images / lines
+ * @returns {{ name: string, color: string, images: { id: string, name: string, url: string }[],
+ *   errorImages: Record<string, string>, lines: Record<string, { from: number, text: string[] }[]>,
+ *   crop: { x: number, y: number, size: number }, icon?: string }}
  */
-export function sanitizeCompanion(raw, ruleIds) {
+export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('ไม่ใช่ไฟล์คอมพาเนียน');
     if (raw.type !== undefined && raw.type !== COMPANION_TYPE) throw new Error('ไม่ใช่ไฟล์คอมพาเนียนของ Error Companion');
     const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, MAX_NAME) : '';
     if (!name) throw new Error('ต้องมีชื่อ');
     const color = typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color.trim()) ? raw.color.trim().toLowerCase() : DEFAULT_COLOR;
 
-    const sprites = {};
-    const rawSprites = raw.sprites && typeof raw.sprites === 'object' ? raw.sprites : {};
-    for (const mood of MOODS) {
-        const url = typeof rawSprites[mood] === 'string' ? rawSprites[mood].trim() : '';
-        if (!url) continue;
-        if (!isSafeImageUrl(url)) throw new Error(`รูป ${mood}: ใช้ได้แค่ลิงก์ https:// หรือที่อยู่ไฟล์ในเซิร์ฟเวอร์ SillyTavern`);
-        sprites[mood] = url;
+    const images = [];
+    const errorImages = {};
+    const ids = new Set();
+    const addImage = (id, imgName, url) => {
+        if (images.length >= MAX_IMAGES) return null;
+        url = typeof url === 'string' ? url.trim() : '';
+        if (!url) return null;
+        const label = (typeof imgName === 'string' && imgName.trim() ? imgName.trim() : `รูป ${images.length + 1}`).slice(0, MAX_IMAGE_NAME);
+        if (!isSafeImageUrl(url)) throw badUrl(`รูป "${label}"`);
+        let safeId = typeof id === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(id) && !ids.has(id) ? id : '';
+        for (let n = images.length + 1; !safeId; n++) if (!ids.has(`img${n}`)) safeId = `img${n}`;
+        ids.add(safeId);
+        images.push({ id: safeId, name: label, url });
+        return safeId;
+    };
+
+    if (Array.isArray(raw.images)) {
+        const renamed = new Map(); // id in the file → id kept
+        for (const img of raw.images) {
+            if (!img || typeof img !== 'object') continue;
+            const kept = addImage(img.id, img.name, img.url);
+            // a repeated id in the file keeps pointing at the first image that had it
+            if (kept && typeof img.id === 'string' && !renamed.has(img.id)) renamed.set(img.id, kept);
+        }
+        const rawPick = raw.errorImages && typeof raw.errorImages === 'object' ? raw.errorImages : {};
+        for (const rule of rules) {
+            const kept = renamed.get(rawPick[rule.id]);
+            if (kept) errorImages[rule.id] = kept;
+        }
+    } else if (raw.sprites && typeof raw.sprites === 'object') {
+        // version 1: six fixed slots
+        for (const mood of MOODS) addImage(mood, MOOD_NAMES[mood], raw.sprites[mood]);
+        for (const rule of rules) {
+            if (ids.has(rule.mood)) errorImages[rule.id] = rule.mood;
+        }
     }
 
     const lines = {};
     const rawLines = raw.lines && typeof raw.lines === 'object' ? raw.lines : {};
-    for (const id of ruleIds) {
-        const value = rawLines[id];
-        let tiers;
-        if (typeof value === 'string') {
-            tiers = parseLines(value);
-        } else if (Array.isArray(value)) {
-            // [{ from, text: [] }] as exported, or a plain list of sentences
-            const text = value.flatMap(t => {
-                if (typeof t === 'string') return [t];
-                if (!t || !Array.isArray(t.text)) return [];
-                const from = Number.isFinite(Number(t.from)) ? Math.max(1, Math.floor(Number(t.from))) : 1;
-                return t.text.filter(x => typeof x === 'string').map(x => (from > 1 ? `[${from}] ${x}` : x));
-            });
-            tiers = parseLines(text.join('\n'));
-        } else {
-            continue;
-        }
-        let left = MAX_LINES;
-        tiers = tiers.map(t => {
-            const text = t.text.slice(0, Math.max(0, left));
-            left -= text.length;
-            return { from: t.from, text };
-        }).filter(t => t.text.length);
-        if (tiers.length) lines[id] = tiers;
+    for (const rule of rules) {
+        const tiers = cleanTiers(rawLines[rule.id]);
+        if (tiers.length) lines[rule.id] = tiers;
     }
-    let icon;
+
+    const out = { name, color, images, errorImages, lines, crop: sanitizeCrop(raw.crop) };
     if (typeof raw.icon === 'string' && raw.icon.trim()) {
-        icon = raw.icon.trim();
-        if (!isSafeImageUrl(icon)) throw new Error('รูปไอคอน: ใช้ได้แค่ลิงก์ https:// หรือที่อยู่ไฟล์ในเซิร์ฟเวอร์ SillyTavern');
+        out.icon = raw.icon.trim();
+        if (!isSafeImageUrl(out.icon)) throw badUrl('รูปไอคอน');
     }
-    const out = { name, color, sprites, lines, crop: sanitizeCrop(raw.crop) };
-    if (icon) out.icon = icon;
     return out;
 }
 
@@ -215,10 +260,11 @@ export function cropBox(crop, natW, natH, d) {
 export function exportCompanion(companion) {
     return {
         type: COMPANION_TYPE,
-        version: 1,
+        version: 2,
         name: companion.name,
         color: companion.color,
-        sprites: { ...companion.sprites },
+        images: (companion.images ?? []).map(({ id, name, url }) => ({ id, name, url })),
+        errorImages: { ...companion.errorImages },
         ...(companion.icon ? { icon: companion.icon } : {}),
         crop: sanitizeCrop(companion.crop),
         lines: structuredClone(companion.lines ?? {}),
