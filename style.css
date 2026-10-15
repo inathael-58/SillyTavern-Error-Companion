@@ -39,14 +39,17 @@
     width: min(760px, calc(100vw - 16px));
 }
 
-/* stands behind the box; the flat waist cut sits on the box's top edge */
+/* centred, standing behind the box; the flat waist cut sits on the box's top edge */
 #ec_root .ec_sprite {
     position: absolute;
-    right: 24px;
+    left: 50%;
+    translate: -50% 0; /* not transform: the entrance animation uses that */
     bottom: calc(100% - 1px);
     height: min(40vh, 400px);
     width: auto;
-    max-width: none;
+    max-width: 100%;
+    object-fit: contain;
+    object-position: bottom;
     pointer-events: none;
     user-select: none;
     filter: drop-shadow(0 4px 10px var(--ec-shadow));
@@ -110,6 +113,17 @@
     font-size: 1.3em;
     line-height: 1.45;
     cursor: pointer;
+}
+
+/* the companion's words in quotes, so they read apart from the explanation */
+#ec_root .ec_line::before,
+#ec_mini .ec_mini_line::before {
+    content: '“';
+}
+
+#ec_root .ec_line::after,
+#ec_mini .ec_mini_line::after {
+    content: '”';
 }
 
 #ec_root .ec_next {
@@ -237,7 +251,6 @@
 
 @media (max-width: 600px) {
     #ec_root .ec_sprite {
-        right: 4px;
         height: min(30vh, 250px);
     }
 
@@ -288,6 +301,15 @@
     max-width: none;
     height: auto;
     pointer-events: none;
+}
+
+/* someone else's image: fill the circle from the top instead of Tawan's face crop */
+#ec_mini .ec_face.ec_face_cover img {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 8%;
 }
 
 #ec_mini .ec_bubble {
@@ -442,4 +464,115 @@
 .ec_settings .ec_btns .menu_button {
     width: auto;
     margin: 0;
+}
+
+.ec_settings .menu_button.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.ec_settings .ec_comp_row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ec_settings .ec_comp_row select {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+}
+
+.ec_settings .ec_comp_row .menu_button {
+    width: auto;
+    margin: 0;
+    padding: 4px 9px;
+}
+
+.ec_settings .ec_paste {
+    margin-top: 6px;
+}
+
+.ec_settings .ec_paste summary {
+    cursor: pointer;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+/* ---------- companion editor ---------- */
+
+.ec_settings .ec_editor {
+    margin-top: 10px;
+    padding: 8px 10px 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+}
+
+.ec_settings .ec_editor .ec_set_title:first-child {
+    margin-top: 0;
+}
+
+.ec_settings .ec_field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ec_settings .ec_ed_head {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.ec_settings .ec_ed_head .ec_field:first-child {
+    flex: 1;
+}
+
+.ec_settings .ec_ed_colorfield input {
+    width: 52px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.ec_settings .ec_ed_sprite {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+}
+
+.ec_settings .ec_ed_sprite .ec_field {
+    flex: 1;
+    font-size: 0.9em;
+}
+
+.ec_settings .ec_ed_thumb {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: cover;
+    object-position: 50% 10%;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.ec_settings .ec_ed_url.ec_bad {
+    outline: 2px solid #d9534f;
+}
+
+.ec_settings .ec_ed_lines summary {
+    padding: 3px 0;
+    cursor: pointer;
+}
+
+.ec_settings .ec_ed_lines textarea {
+    margin-bottom: 4px;
+}
+
+.ec_settings .ec_ed_mark {
+    opacity: 0.6;
 }
