@@ -218,6 +218,28 @@ export const RULES = [
         sample: { message: 'Your project has been denied access. Please contact support.', title: 'Chat Completion API' },
     },
     {
+        id: 'forbidden',
+        name: 'ถูกปฏิเสธการเข้าถึง (403 Forbidden)',
+        mood: 'confused',
+        match: [
+            /\bforbidden\b|\b403\b/i,
+        ],
+        lines: [
+            { from: 1, text: ['ยามหน้าประตูไม่ให้เข้าครับ', 'เคาะประตูแล้ว… เขาบอกว่าห้ามเข้าครับ', 'บัตรผ่านเราใช้กับประตูนี้ไม่ได้ครับ'] },
+            { from: 3, text: ['โดนไล่กลับมา {n} รอบแล้วครับ ลองเช็กรหัสผ่านของ proxy ดูไหม'] },
+        ],
+        title: 'ปลายทางรู้ว่าเราเป็นใคร แต่ไม่อนุญาตให้ใช้',
+        what: 'ต่างจาก Unauthorized (ยืนยันตัวตนไม่ผ่าน) ตรงที่ 403 Forbidden แปลว่าปลายทางไม่ยอมให้ใช้ · ถ้าใช้ reverse proxy มักเป็นเพราะรหัสผ่านของ proxy ผิดหรือไม่ได้ใส่, proxy ปิดรับคนนอก / ต้องลงทะเบียน IP ก่อน, proxy บล็อกประเทศหรือ IP ของเรา หรือ key ที่เจ้าของ proxy ใช้ต่อไปยังผู้ให้บริการใช้ไม่ได้แล้ว',
+        fixes: [
+            'เช็กช่อง Proxy Password ในหน้า API Connections ว่าตรงกับที่เจ้าของ proxy ให้มา (ไม่มีช่องว่างติดมา)',
+            'เช็กที่อยู่ proxy (ช่อง Reverse Proxy) ว่าถูก และลงท้ายตามที่ proxy นั้นบอก เช่น /v1',
+            'ดูประกาศของ proxy (Discord, หน้าเว็บ) ว่าปิดชั่วคราว เปลี่ยนรหัส หรือต้องลงทะเบียนก่อนใช้หรือเปล่า',
+            'ถ้าเปิด VPN อยู่ ลองปิด หรือถ้าไม่ได้เปิด ลองถามเจ้าของ proxy ว่าบล็อกประเทศเราไหม',
+            'ถ้าไม่ได้ใช้ proxy: key อาจไม่มีสิทธิ์ใช้โมเดลหรือบริการนี้ ลองสร้าง key ใหม่หรือเช็กสิทธิ์ในบัญชี',
+        ],
+        sample: { message: 'Forbidden', title: 'API returned an error' },
+    },
+    {
         id: 'key',
         name: 'API key ไม่ถูกต้อง',
         mood: 'confused',

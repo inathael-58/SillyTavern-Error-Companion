@@ -64,6 +64,11 @@ test('real error texts land on the right rule', () => {
     assert.equal(id('reasoning_effort is not supported by this model'), 'param');
     assert.equal(id('Your account has been suspended.'), 'denied');
     assert.equal(id('PERMISSION_DENIED'), 'key');
+    assert.equal(id('Forbidden', 'API returned an error'), 'forbidden');
+    assert.equal(id('Request failed with status code 403'), 'forbidden');
+    assert.equal(id('<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center></body></html>'), 'forbidden');
+    // the more specific 403s keep their own explanation
+    assert.equal(id('Your project has been denied access. Please contact support.'), 'denied');
     assert.equal(id('flagged text', 'Reasons: sexual'), 'blocked');
 });
 

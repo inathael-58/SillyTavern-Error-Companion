@@ -19,6 +19,7 @@
 | โควตาหมด / ส่งถี่เกิน (429) | `You exceeded your current quota`, `Rate limit exceeded` |
 | เครดิตหมด (402) | `Insufficient credits`, `can only afford` |
 | บัญชี / โปรเจกต์ถูกระงับสิทธิ์ | `Your project has been denied access`, `account has been suspended` |
+| ถูกปฏิเสธการเข้าถึง (403) | `Forbidden` (มักเป็น reverse proxy: รหัสผ่าน proxy ผิด, proxy ปิดรับ / บล็อกประเทศ) |
 | API key ไม่ถูกต้อง | `API key not valid`, `Unauthorized`, `No auth credentials found` |
 | ประเทศไม่รองรับ | `User location is not supported` |
 | prompt ยาวเกิน context | `Mandatory prompts exceed the context size`, `maximum context length` |
@@ -103,12 +104,12 @@ Extensions → Error Companion → คอมพาเนียน
 
 ไฟล์แบบเก่า (`version: 1` ที่มี `sprites` 6 ช่อง) ยังนำเข้าได้ จะถูกแปลงเป็นรูป 6 รูปตามชื่อช่องเดิมให้อัตโนมัติ
 
-id ของ error ที่ใช้ใน `lines` และ `errorImages`: `stserver`, `import`, `blocked`, `prefill`, `param`, `overloaded`, `quota`, `credits`, `denied`, `key`, `location`, `context`, `empty`, `model`, `network`, `noreply`, `server`, `unknown`
+id ของ error ที่ใช้ใน `lines` และ `errorImages`: `stserver`, `import`, `blocked`, `prefill`, `param`, `overloaded`, `quota`, `credits`, `denied`, `forbidden`, `key`, `location`, `context`, `empty`, `model`, `network`, `noreply`, `server`, `unknown`
 
 ## ลองดู
 
 - กด ▶ หน้า error ในหน้าตั้งค่า
-- หรือพิมพ์ `/ec-test overloaded` ในช่องแชท (ใส่ id ของ error: `stserver`, `import`, `blocked`, `prefill`, `param`, `overloaded`, `quota`, `credits`, `denied`, `key`, `location`, `context`, `empty`, `model`, `network`, `noreply`, `server`, `unknown` · ว่าง = สุ่ม)
+- หรือพิมพ์ `/ec-test overloaded` ในช่องแชท (ใส่ id ของ error: `stserver`, `import`, `blocked`, `prefill`, `param`, `overloaded`, `quota`, `credits`, `denied`, `forbidden`, `key`, `location`, `context`, `empty`, `model`, `network`, `noreply`, `server`, `unknown` · ว่าง = สุ่ม)
   คำสั่งนี้สร้าง error toast จริง เลยผ่านเส้นทางเดียวกับ error จริงทุกอย่าง (และนับเป็นหนึ่งครั้งด้วย)
 
 ## สำหรับคนพัฒนา
