@@ -10,6 +10,8 @@
  * lines: tiers by how many times this error was seen today; the highest tier
  * whose `from` ≤ count is used and one line is picked at random. {n} = count.
  * sample: a real-looking toast for the settings preview and /ec-test.
+ * followup: a vague message SillyTavern shows next to a more specific one; it
+ *   never replaces an explanation that is already on screen.
  */
 
 /** @typedef {'neutral'|'tired'|'pious'|'exhausted'|'shocked'|'confused'} Mood */
@@ -25,10 +27,52 @@
  * @property {string} what      what it means
  * @property {string[]} fixes   what to try
  * @property {{ message: string, title?: string }} sample
+ * @property {boolean} [followup]
  */
 
 /** @type {ErrorRule[]} */
 export const RULES = [
+    {
+        id: 'stserver',
+        name: 'เชื่อมต่อเซิร์ฟเวอร์ ST ไม่ได้ / บันทึกไม่ได้',
+        mood: 'shocked',
+        match: [
+            /(settings|chat) could not be saved|check the server connection|csrf token|st server cannot be reached|server is running and accessible/i,
+        ],
+        lines: [
+            { from: 1, text: ['เดี๋ยวนะ! บันทึกไม่ลงครับ', 'บ้านหลังใหญ่ (เซิร์ฟเวอร์ ST) ไม่ตอบรับครับ', 'ใจเย็นนะครับ ก๊อปข้อความที่พิมพ์ค้างไว้เก็บก่อนเลย'] },
+            { from: 3, text: ['เซิร์ฟเวอร์ยังไม่ตอบ {n} รอบแล้วครับ… ไปดูหน้าต่าง terminal ทีนะ'] },
+        ],
+        title: 'หน้าเว็บคุยกับเซิร์ฟเวอร์ SillyTavern ไม่ได้',
+        what: 'SillyTavern มีสองส่วน: หน้าเว็บที่เราเห็น กับเซิร์ฟเวอร์ที่รันอยู่เบื้องหลัง (หน้าต่าง terminal, Termux หรือโฮสต์) error นี้แปลว่าหน้าเว็บส่งข้อมูลไปให้เซิร์ฟเวอร์ไม่สำเร็จ การตั้งค่าหรือแชทล่าสุดอาจยังไม่ถูกบันทึก · ถ้าขึ้นว่า CSRF token แปลว่าหน้าเว็บกับเซิร์ฟเวอร์จำกันไม่ได้ เช่นเซิร์ฟเวอร์เพิ่งรีสตาร์ต หรือเปิดหน้าทิ้งไว้นาน',
+        fixes: [
+            'คัดลอกข้อความที่พิมพ์ค้างไว้เก็บก่อน เผื่อหาย',
+            'เช็กว่าเซิร์ฟเวอร์ ST ยังรันอยู่ (หน้าต่าง terminal ยังเปิด, บนมือถือ Termux ยังไม่ถูกปิด)',
+            'รีเฟรชหน้าเว็บ · CSRF token แก้ด้วยวิธีนี้เกือบทุกครั้ง',
+            'ถ้าเปิด ST จากเครื่องอื่นหรือผ่านเว็บโฮสต์ เช็กอินเทอร์เน็ตและที่อยู่ที่ใช้เปิด',
+            'ถ้าพื้นที่ดิสก์ของเครื่องที่รัน ST เต็ม ก็บันทึกไม่ได้เหมือนกัน',
+        ],
+        sample: { message: 'Check the server connection and reload the page to prevent data loss.', title: 'Settings could not be saved' },
+    },
+    {
+        id: 'import',
+        name: 'นำเข้าการ์ดตัวละครไม่ได้',
+        mood: 'confused',
+        match: [
+            /could not import character|file is likely invalid or corrupted/i,
+        ],
+        lines: [
+            { from: 1, text: ['การ์ดใบนี้… อ่านไม่ออกเลยครับ', 'ได้ซองเปล่ามาครับ ข้างในไม่มีตัวละคร', 'รูปสวยนะครับ แต่ตัวละครหายไปไหนก็ไม่รู้'] },
+        ],
+        title: 'ไฟล์นี้ไม่ใช่การ์ดตัวละครที่ ST อ่านได้',
+        what: 'การ์ดตัวละครแบบ PNG ซ่อนข้อมูลตัวละครไว้ในไฟล์ภาพ ถ้าไฟล์ถูกบีบอัดหรือบันทึกใหม่ ข้อมูลส่วนนี้จะหายไป เหลือแค่รูปธรรมดา · หรือไฟล์อาจไม่ใช่การ์ดจริง ๆ เช่นได้ไฟล์หน้าเว็บมาแทน หรือเป็นรูปแบบที่ ST ไม่รองรับ',
+        fixes: [
+            'ดาวน์โหลดไฟล์ต้นฉบับจากที่มาอีกครั้ง อย่าใช้รูปที่แคปหน้าจอ หรือรูปที่ส่งต่อผ่านแชทและโซเชียล (มักถูกบีบอัดจนข้อมูลหาย)',
+            'ถ้ามีไฟล์ .json ของการ์ด ลองนำเข้าไฟล์นั้นแทน',
+            'การ์ดจากเว็บไซต์ ลองใช้ช่องนำเข้าจากลิงก์ในหน้ารายชื่อตัวละครแทนการดาวน์โหลดเอง',
+        ],
+        sample: { message: 'The file is likely invalid or corrupted.', title: 'Could not import character' },
+    },
     {
         id: 'blocked',
         name: 'โดนตัวกรองเนื้อหาบล็อก',
@@ -72,6 +116,25 @@ export const RULES = [
             'ลบข้อความในช่อง Assistant Prefill (ของ Claude) หรือ Start Reply With (ใน Advanced Formatting)',
         ],
         sample: { message: 'Requests ending with a model turn are not supported.', title: 'Chat Completion API' },
+    },
+    {
+        id: 'param',
+        name: 'ตั้งค่าที่โมเดลนี้ไม่รองรับ',
+        mood: 'confused',
+        match: [
+            /thinking (level|budget|config)|reasoning[ _]?effort|unsupported (parameter|value)|(parameter|argument|value).{0,60}not supported|not supported (for|with|by) (this|the) model|invalid value for|unknown (parameter|field)|unrecognized (request )?(argument|parameter)|extra inputs are not permitted/i,
+        ],
+        lines: [
+            { from: 1, text: ['โมเดลนี้เขาไม่รับค่าที่ตั้งไว้ครับ ปรับนิดเดียวก็ได้แล้ว', 'ตั้งค่าเกินสเปกไปนิดนึงครับ', 'ปุ่มนี้โมเดลนี้ไม่มีครับ กดไปก็ไม่ติด'] },
+        ],
+        title: 'ส่งค่าตั้งค่าที่โมเดลนี้ไม่รองรับ',
+        what: 'ค่าบางอย่างใน AI Response Configuration ใช้กับโมเดลนี้ไม่ได้ เช่นระดับการคิด (Reasoning Effort / thinking level) ที่โมเดลนี้ไม่มี หรือค่าอย่าง temperature, top_k, penalty ที่บางรุ่นไม่รับ · ข้อความ error มักบอกชื่อค่าที่มีปัญหาไว้',
+        fixes: [
+            'ถ้าเกี่ยวกับ thinking / reasoning: เปลี่ยน Reasoning Effort เป็น Auto หรือระดับอื่น',
+            'ดูชื่อค่าในข้อความ error แล้วไปปรับหรือรีเซ็ตค่านั้นในหน้า AI Response Configuration',
+            'preset ที่ทำมาสำหรับโมเดลอื่นอาจตั้งค่าที่โมเดลนี้ไม่รับ ลองเปลี่ยน preset ดู',
+        ],
+        sample: { message: 'Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.', title: 'Chat Completion API' },
     },
     {
         id: 'overloaded',
@@ -134,6 +197,25 @@ export const RULES = [
             'สลับไปใช้โมเดลฟรีชั่วคราว (ใน OpenRouter คือรุ่นที่ลงท้ายด้วย :free)',
         ],
         sample: { message: 'This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1200.', title: 'Chat Completion API' },
+    },
+    {
+        id: 'denied',
+        name: 'บัญชี / โปรเจกต์ถูกระงับสิทธิ์',
+        mood: 'shocked',
+        match: [
+            /denied access|has been (suspended|banned|disabled|terminated)|account (is |was |has been )?(suspended|disabled|deactivated|banned)|organization (has been )?disabled/i,
+        ],
+        lines: [
+            { from: 1, text: ['เอ่อ… เขาบอกว่าโปรเจกต์นี้ถูกระงับครับ', 'ประตูนี้ไม่ได้แค่ล็อกครับ เขาปิดตายเลย'] },
+        ],
+        title: 'ผู้ให้บริการระงับสิทธิ์ของบัญชีหรือโปรเจกต์นี้',
+        what: 'ไม่ใช่ key พิมพ์ผิด แต่ผู้ให้บริการปิดสิทธิ์การใช้งานของบัญชี หรือของโปรเจกต์ที่ key นี้สังกัด (เช่นโปรเจกต์ใน Google AI Studio / Google Cloud) อาจเพราะระบบตรวจพบการใช้งานที่ขัดนโยบาย ปัญหาการชำระเงิน หรือเหตุผลอื่นของผู้ให้บริการ · แก้จากฝั่ง SillyTavern ไม่ได้',
+        fixes: [
+            'เข้าเว็บของผู้ให้บริการ (เช่น Google AI Studio, Google Cloud Console) แล้วดูประกาศหรืออีเมลที่แจ้งเหตุผล',
+            'ถ้าคิดว่าเป็นความผิดพลาด ติดต่อฝ่ายซัพพอร์ตหรือยื่นอุทธรณ์ตามช่องทางที่เขาแจ้ง',
+            'ระหว่างรอ ใช้ผู้ให้บริการอื่นไปก่อนได้',
+        ],
+        sample: { message: 'Your project has been denied access. Please contact support.', title: 'Chat Completion API' },
     },
     {
         id: 'key',
@@ -215,18 +297,20 @@ export const RULES = [
     },
     {
         id: 'model',
-        name: 'ไม่พบโมเดล',
+        name: 'ใช้โมเดลนี้ไม่ได้ / ไม่พบโมเดล',
         mood: 'confused',
         match: [
             /not found for API version|no endpoints found|model.{0,60}(not found|does not exist|not supported|is not available)|model_not_found|(invalid|unknown) model/i,
+            /multi-?turn chat is not enabled|is not enabled for models?\//i,
         ],
         lines: [
             { from: 1, text: ['โมเดลนี้… ไม่มีอยู่จริงครับ หรืออาจจะเคยมี', 'หาโมเดลนี้ไม่เจอครับ ย้ายบ้านไปแล้วมั้ง'] },
         ],
-        title: 'หาโมเดลที่เลือกไว้ไม่เจอ',
-        what: 'ชื่อโมเดลที่เลือกไว้ไม่มีอยู่, ถูกเลิกให้บริการไปแล้ว หรือ key นี้ไม่มีสิทธิ์ใช้ · โมเดลรุ่น preview / experimental มักถูกปิดหลังออกรุ่นจริง',
+        title: 'โมเดลที่เลือกไว้ใช้ไม่ได้',
+        what: 'ชื่อโมเดลที่เลือกไว้ไม่มีอยู่, ถูกเลิกให้บริการไปแล้ว, key นี้ไม่มีสิทธิ์ใช้ หรือเป็นโมเดลที่ไม่ได้ทำมาสำหรับแชท (เช่นรุ่นทดลองเฉพาะทางที่คุยต่อเนื่องหลายรอบไม่ได้) · โมเดลรุ่น preview / experimental มักถูกปิดหลังออกรุ่นจริง',
         fixes: [
             'เลือกโมเดลใหม่จากรายการใน API Connections',
+            'ถ้าขึ้นว่า Multiturn chat is not enabled แปลว่าโมเดลนี้ใช้คุยต่อเนื่องไม่ได้ ให้เลือกโมเดลที่ทำมาสำหรับแชท',
             'ถ้าพิมพ์ชื่อโมเดลเอง ตรวจตัวสะกดอีกที',
         ],
         sample: { message: 'models/gemini-1.0-pro is not found for API version v1beta, or is not supported for generateContent.', title: 'Chat Completion API' },
@@ -236,7 +320,7 @@ export const RULES = [
         name: 'ต่อไม่ติด',
         mood: 'shocked',
         match: [
-            /failed to fetch|fetch failed|network ?error|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket hang up|cannot be reached|could not get a reply|connection (refused|error|reset)|load failed/i,
+            /failed to fetch|fetch failed|network ?error|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|socket hang up|connection (refused|error|reset)|load failed/i,
         ],
         lines: [
             { from: 1, text: ['สายหลุด! ติดต่อไม่ได้เลยครับ', 'ฮัลโหล? ฮัลโหล?? ไม่มีใครรับสายครับ', 'เดี๋ยวนะ เน็ตไปไหนแล้วครับ!'] },
@@ -249,6 +333,26 @@ export const RULES = [
             'ดูว่าหน้าต่าง terminal ของ ST ยังเปิดอยู่ (บนมือถือที่ใช้ Termux อย่าปัดแอปทิ้ง)',
             'ตรวจ URL ใน API Connections และ reverse proxy แล้วกด Connect ใหม่',
         ],
+        sample: { message: 'Failed to fetch', title: 'Chat Completion API' },
+    },
+    {
+        id: 'noreply',
+        name: 'ไม่ได้คำตอบจาก API',
+        mood: 'confused',
+        followup: true,
+        match: [
+            /could not get a reply/i,
+        ],
+        lines: [
+            { from: 1, text: ['เขาไม่ตอบอะไรกลับมาเลยครับ', 'ส่งไปแล้ว… แต่ไม่มีเสียงตอบรับครับ'] },
+        ],
+        title: 'SillyTavern ไม่ได้คำตอบที่ใช้ได้จาก API',
+        what: 'ข้อความนี้เป็นคำเตือนกว้าง ๆ ของ ST ว่าเชื่อมต่อหรือขอคำตอบไม่สำเร็จ มักขึ้นคู่กับ error อีกอันที่บอกสาเหตุจริง (เช่น Unauthorized, 503, project denied) ถ้ามี ให้ดูอันนั้นเป็นหลัก',
+        fixes: [
+            'ดู error อีกอันที่เด้งมาพร้อมกัน ส่วนใหญ่บอกสาเหตุได้ชัดกว่า',
+            'เช็ก API key และผู้ให้บริการที่เลือกในหน้า API Connections แล้วกด Connect ใหม่',
+            'เช็กอินเทอร์เน็ต และที่อยู่ reverse proxy ถ้าใช้',
+        ],
         sample: { message: 'Could not get a reply from API. Check your connection settings / API key and try again.' },
     },
     {
@@ -257,6 +361,7 @@ export const RULES = [
         mood: 'shocked',
         match: [
             /internal (server )?error|bad gateway|gateway time-?out|deadline.(exceeded|expired)|timed? ?out|\b50[024]\b|provider returned error/i,
+            /upstream (error|request|connect)|do request failed|bad response from upstream/i,
         ],
         lines: [
             { from: 1, text: ['ฝั่งเขาพังครับ! ไม่ใช่ฝีมือเรานะ', 'เกิดอะไรขึ้นที่โน่นเนี่ย…', 'เซิร์ฟเวอร์เขาล้มครับ! ใครก็ได้ช่วยที'] },
@@ -268,6 +373,7 @@ export const RULES = [
             'ลองใหม่อีกครั้ง ส่วนใหญ่หายเอง',
             'ถ้าเป็นนาน ดูหน้า status ของผู้ให้บริการ',
             'ถ้าใช้ reverse proxy ลองปิดชั่วคราว เพื่อดูว่าปัญหาอยู่ที่ proxy หรือเปล่า',
+            'ข้อความแบบ upstream error มาจากเว็บตัวกลาง (proxy ที่รวม API หลายเจ้า) แปลว่าตัวกลางต่อไปหาผู้ให้บริการต้นทางไม่สำเร็จ ลองใหม่ หรือเปลี่ยนโมเดล / ช่องทางในเว็บนั้น',
             'prompt ยาวมาก ๆ หรือโมเดลคิดนาน อาจทำให้หมดเวลา (504) ลองลดความยาวดู',
         ],
         sample: { message: 'Internal error encountered.', title: 'Chat Completion API' },

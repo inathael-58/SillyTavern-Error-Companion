@@ -19,9 +19,21 @@
 
 /* ---------- full box ---------- */
 
-#ec_root {
+/*
+ * Both layers are pinned by their top-left corner and given the screen's size,
+ * never by bottom / inset: SillyTavern makes body position: fixed (so <html> is
+ * 0px tall) and puts translateZ(0) on <html>, which makes that 0px box the
+ * reference for position: fixed. Anything placed with bottom: … would land
+ * above the screen.
+ */
+#ec_root,
+#ec_mini {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
     z-index: 10000;
 }
 
@@ -271,16 +283,21 @@
 
 /* ---------- small bubble ---------- */
 
+/* the layer lets taps through; only the card takes them */
 #ec_mini {
-    position: fixed;
+    pointer-events: none;
+}
+
+#ec_mini .ec_mini_card {
+    position: absolute;
     right: 12px;
     bottom: calc(var(--bottomFormBlockSize, 50px) + 18px);
-    z-index: 10000;
     display: flex;
     flex-direction: row-reverse;
     align-items: flex-end;
     gap: 8px;
     max-width: min(380px, calc(100vw - 24px));
+    pointer-events: auto;
 }
 
 #ec_mini .ec_face {
@@ -355,7 +372,7 @@
     opacity: 1;
 }
 
-#ec_mini.ec_in {
+#ec_mini.ec_in .ec_mini_card {
     animation: ec_rise 0.3s ease-out;
 }
 
@@ -386,7 +403,7 @@
     #ec_root.ec_in .ec_box,
     #ec_root.ec_done .ec_detail,
     #ec_root.ec_done .ec_next,
-    #ec_mini.ec_in {
+    #ec_mini.ec_in .ec_mini_card {
         animation: none;
     }
 }

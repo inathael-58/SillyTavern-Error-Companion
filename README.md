@@ -10,18 +10,23 @@
 
 | error | ตัวอย่างข้อความ |
 |---|---|
+| เชื่อมต่อเซิร์ฟเวอร์ ST ไม่ได้ / บันทึกไม่ได้ | `Settings could not be saved`, `Chat could not be saved`, `Couldn't get CSRF token` |
+| นำเข้าการ์ดตัวละครไม่ได้ | `Could not import character` · `The file is likely invalid or corrupted` |
 | โดนตัวกรองเนื้อหาบล็อก | `Prompt was blocked due to : PROHIBITED_CONTENT`, moderation ของ OpenRouter |
 | ข้อความสุดท้ายเป็นของบอท (prefill) | `Requests ending with a model turn are not supported`, `must end with a user message` |
-| เซิร์ฟเวอร์คนแน่น (503 / 529) | `The model is overloaded`, `high demand` |
+| ตั้งค่าที่โมเดลนี้ไม่รองรับ | `Thinking level MINIMAL is not supported for this model`, `Unsupported parameter` |
+| เซิร์ฟเวอร์คนแน่น (503 / 529) | `The model is overloaded`, `high demand`, `Service Unavailable` |
 | โควตาหมด / ส่งถี่เกิน (429) | `You exceeded your current quota`, `Rate limit exceeded` |
 | เครดิตหมด (402) | `Insufficient credits`, `can only afford` |
-| API key ไม่ถูกต้อง | `API key not valid`, `No auth credentials found` |
+| บัญชี / โปรเจกต์ถูกระงับสิทธิ์ | `Your project has been denied access`, `account has been suspended` |
+| API key ไม่ถูกต้อง | `API key not valid`, `Unauthorized`, `No auth credentials found` |
 | ประเทศไม่รองรับ | `User location is not supported` |
 | prompt ยาวเกิน context | `Mandatory prompts exceed the context size`, `maximum context length` |
 | ตอบกลับมาว่างเปล่า | `Candidate text empty`, `returned no candidate` |
-| ไม่พบโมเดล | `is not found for API version`, `No endpoints found` |
-| ต่อไม่ติด | `Could not get a reply from API`, `Failed to fetch` |
-| เซิร์ฟเวอร์ปลายทางพัง (500 / 502 / 504) | `Internal error encountered`, `Bad Gateway` |
+| ใช้โมเดลนี้ไม่ได้ / ไม่พบโมเดล | `is not found for API version`, `No endpoints found`, `Multiturn chat is not enabled` |
+| ต่อไม่ติด | `Failed to fetch`, `ECONNREFUSED` |
+| ไม่ได้คำตอบจาก API | `Could not get a reply from API` (ถ้าเด้งคู่กับ error อื่น จะไม่บังคำอธิบายของ error นั้น) |
+| เซิร์ฟเวอร์ปลายทางพัง (500 / 502 / 504) | `Internal error encountered`, `Bad Gateway`, `upstream error: do request failed` |
 
 error จาก API ที่ยังไม่รู้จัก ตะวันจะบอกว่ายังไม่รู้จัก พร้อมข้อความต้นฉบับและปุ่มคัดลอกไปถามคนอื่น
 
@@ -98,12 +103,12 @@ Extensions → Error Companion → คอมพาเนียน
 
 ไฟล์แบบเก่า (`version: 1` ที่มี `sprites` 6 ช่อง) ยังนำเข้าได้ จะถูกแปลงเป็นรูป 6 รูปตามชื่อช่องเดิมให้อัตโนมัติ
 
-id ของ error ที่ใช้ใน `lines` และ `errorImages`: `blocked`, `prefill`, `overloaded`, `quota`, `credits`, `key`, `location`, `context`, `empty`, `model`, `network`, `server`, `unknown`
+id ของ error ที่ใช้ใน `lines` และ `errorImages`: `stserver`, `import`, `blocked`, `prefill`, `param`, `overloaded`, `quota`, `credits`, `denied`, `key`, `location`, `context`, `empty`, `model`, `network`, `noreply`, `server`, `unknown`
 
 ## ลองดู
 
 - กด ▶ หน้า error ในหน้าตั้งค่า
-- หรือพิมพ์ `/ec-test overloaded` ในช่องแชท (ใส่ id ของ error: `blocked`, `prefill`, `overloaded`, `quota`, `credits`, `key`, `location`, `context`, `empty`, `model`, `network`, `server`, `unknown` · ว่าง = สุ่ม)
+- หรือพิมพ์ `/ec-test overloaded` ในช่องแชท (ใส่ id ของ error: `stserver`, `import`, `blocked`, `prefill`, `param`, `overloaded`, `quota`, `credits`, `denied`, `key`, `location`, `context`, `empty`, `model`, `network`, `noreply`, `server`, `unknown` · ว่าง = สุ่ม)
   คำสั่งนี้สร้าง error toast จริง เลยผ่านเส้นทางเดียวกับ error จริงทุกอย่าง (และนับเป็นหนึ่งครั้งด้วย)
 
 ## สำหรับคนพัฒนา

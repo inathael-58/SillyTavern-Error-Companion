@@ -41,13 +41,29 @@ test('real error texts land on the right rule', () => {
         ['This model does not support assistant message prefill. The conversation must end with a user message.', 'prefill'],
         ['Provider returned error', 'server'],
         // SillyTavern itself
-        ['Could not get a reply from API. Check your connection settings / API key and try again.', 'network'],
+        ['Could not get a reply from API. Check your connection settings / API key and try again.', 'noreply'],
         ['Failed to fetch', 'network'],
         ['Bad Gateway', 'server'],
     ];
     for (const [message, want] of cases) assert.equal(id(message), want, message);
     assert.equal(id('Mandatory prompts exceed the context size.', ''), 'context');
-    assert.equal(id('Verify that the server is running and accessible.', 'ST Server cannot be reached'), 'network');
+    assert.equal(id('Verify that the server is running and accessible.', 'ST Server cannot be reached'), 'stserver');
+    // collected from users
+    assert.equal(id('Check the server connection and reload the page to prevent data loss.', 'Settings could not be saved'), 'stserver');
+    assert.equal(id('Check the server connection and reload the page to prevent data loss.', 'Chat could not be saved'), 'stserver');
+    assert.equal(id("Couldn't get CSRF token. Please refresh the page.", 'Error'), 'stserver');
+    assert.equal(id('Service Unavailable', 'API returned an error'), 'overloaded');
+    assert.equal(id('Unauthorized', 'API returned an error'), 'key');
+    assert.equal(id('upstream error: do request failed (request id: 2026090807262519360889682 68d9d69kJSt34g)'), 'server');
+    assert.equal(id('Multiturn chat is not enabled for models/antigravity-preview-05-2026'), 'model');
+    assert.equal(id('Your project has been denied access. Please contact support.'), 'denied');
+    assert.equal(id('Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.'), 'param');
+    assert.equal(id('The file is likely invalid or corrupted.', 'Could not import character'), 'import');
+    // other wordings of the same problems
+    assert.equal(id("Unsupported parameter: 'temperature' is not supported with this model."), 'param');
+    assert.equal(id('reasoning_effort is not supported by this model'), 'param');
+    assert.equal(id('Your account has been suspended.'), 'denied');
+    assert.equal(id('PERMISSION_DENIED'), 'key');
     assert.equal(id('flagged text', 'Reasons: sexual'), 'blocked');
 });
 
@@ -61,7 +77,7 @@ test('unknown fallback only for API-looking toasts', () => {
 });
 
 test('ordinary words do not trigger rules', () => {
-    for (const message of ['Chat could not be saved', 'Invalid file', 'Name is required', 'Character not found in the list']) {
+    for (const message of ['Failed to save preset', 'Invalid file', 'Name is required', 'Character not found in the list']) {
         assert.equal(id(message, ''), null, message);
     }
     // lower-case "safety" alone is not Google's block reason
@@ -85,6 +101,7 @@ test('every rule is complete', () => {
         assert.ok(rule.lines.length && rule.lines[0].from === 1, rule.id);
         assert.ok(rule.title && rule.what && rule.fixes.length, rule.id);
         assert.equal(matchRule(rule.sample.message, rule.sample.title ?? '')?.id, rule.id, `sample of ${rule.id}`);
+        assert.equal(rule.mood !== undefined && rule.match.every(re => re instanceof RegExp), true, rule.id);
     }
     assert.equal(new Set(RULES.map(r => r.id)).size, RULES.length);
 });
