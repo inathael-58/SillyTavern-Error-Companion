@@ -52,12 +52,12 @@
 /*
  * Visual-novel layout. The stage spans the screen height; the box sits at its
  * bottom and the sprite stands right on it (his flat waist cut on the box's top
- * edge). Sizes are shares of the stage height, set per screen shape below and
- * measured in SillyTavern so his head stays below a typical toast.
+ * edge). Sizes are shares of the stage height, set per screen shape below:
+ * a big sprite and a compact box, as sketched by the user on a phone.
  */
 #ec_root {
-    --ec-box-h: min(44%, 420px);
-    --ec-sprite-h: min(27%, 300px);
+    --ec-box-h: min(33%, 330px);
+    --ec-sprite-h: min(44%, 440px);
 }
 
 #ec_root .ec_stage {
@@ -157,7 +157,6 @@
 
 #ec_root .ec_say {
     flex: none;
-    min-height: 2.8em;
     max-height: 40%; /* a very long line (custom companions) scrolls instead of eating the box */
     overflow-y: auto;
     padding-right: 20px;
@@ -291,6 +290,16 @@
     white-space: nowrap;
 }
 
+#ec_root .ec_short {
+    display: none;
+}
+
+@media (max-width: 600px) {
+    #ec_root .ec_short {
+        display: inline;
+    }
+}
+
 #ec_root .ec_ok {
     border-color: var(--ec-sun);
 }
@@ -305,29 +314,50 @@
 
 @media (max-width: 600px) {
     #ec_root {
-        --ec-box-h: 44%;
-        --ec-sprite-h: 26%;
+        --ec-box-h: 32%;
+        --ec-sprite-h: 44%;
     }
 
     #ec_root .ec_box {
-        padding: 20px 12px 12px;
+        padding: 18px 12px 10px;
     }
 
     #ec_root .ec_say {
-        font-size: 1.15em;
+        min-height: 0;
+        font-size: 1.1em;
+    }
+
+    #ec_root .ec_detail {
+        margin-top: 6px;
+        padding-top: 6px;
+    }
+
+    /* one row of compact buttons, so the short box keeps room for the explanation */
+    #ec_root .ec_actions {
+        flex-wrap: nowrap;
+        gap: 4px;
+        margin-top: 6px;
     }
 
     #ec_root .ec_actions .menu_button {
-        flex: 1 1 auto;
+        flex: 1 1 0;
+        min-width: 0;
         justify-content: center;
+        padding: 4px 6px;
+        font-size: 0.85em;
+        white-space: normal;
+        text-align: center;
+    }
+
+    #ec_root .ec_long {
+        display: none;
     }
 }
 
-/* short screens (phones held sideways): smaller sprite, taller box, so the explanation has room */
 @media (max-height: 480px) {
     #ec_root {
-        --ec-box-h: 60%;
-        --ec-sprite-h: 34%;
+        --ec-box-h: 52%;
+        --ec-sprite-h: 44%;
     }
 
     #ec_root .ec_box {

@@ -24,7 +24,7 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.3.3'; // keep in sync with manifest.json
+const VERSION = '0.3.4'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The built-in companion. Its sprites ship with the extension and its lines are the rules' own. */
@@ -302,7 +302,7 @@ function buildRoot() {
                 <div class="ec_actions">
                     <div class="menu_button ec_ok"><i class="fa-solid fa-check"></i> เข้าใจแล้ว</div>
                     <div class="menu_button ec_snooze" title="ไม่เด้งเลย 10 นาที (toast เดิมยังขึ้นตามปกติ)"><i class="fa-solid fa-bell-slash"></i> พัก 10 นาที</div>
-                    <div class="menu_button ec_mute" title="เปิดกลับได้ในหน้าตั้งค่า Extensions → Error Companion"><i class="fa-solid fa-eye-slash"></i> ไม่ต้องบอก error นี้อีก</div>
+                    <div class="menu_button ec_mute" title="เปิดกลับได้ในหน้าตั้งค่า Extensions → Error Companion"><i class="fa-solid fa-eye-slash"></i> <span class="ec_long">ไม่ต้องบอก error นี้อีก</span><span class="ec_short">ไม่ต้องบอกอีก</span></div>
                 </div>
             </div>
         </div>`;
