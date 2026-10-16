@@ -8,13 +8,14 @@
  *   • full box or a small bubble in the corner (setting: always full, full the
  *     first time each day then small, or always small)
  *   • the more often an error shows up today, the more it has to say about it
- *   • the built-in companion is Tawan; users can make their own (name, colour,
- *     image URLs, lines per error) and share them as JSON files
+ *   • built-in companions: Tawan, mINT and HengHeng; users can make their own
+ *     (name, colour, image URLs, lines per error) and share them as JSON files
  *
  * The original toast still shows (optionally hidden). Matching and companion
  * files live in lib.js, what the errors mean in errors.js.
  */
 
+import { BUILTIN_COMPANIONS } from './companions.js';
 import { RULES, UNKNOWN } from './errors.js';
 import {
     COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, MOODS,
@@ -24,10 +25,10 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.3.4'; // keep in sync with manifest.json
+const VERSION = '0.4.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
-/** The built-in companion. Its sprites ship with the extension and its lines are the rules' own. */
+/** The first companion. His sprites ship with the extension and his lines are the rules' own. */
 const TAWAN = Object.freeze({ id: 'tawan', name: 'ตะวัน', color: DEFAULT_COLOR, images: [], errorImages: {}, lines: {} });
 const builtinSprite = mood => new URL(`sprites/tawan/${mood}.webp`, BASE_URL).href;
 /** Tawan's head in each of his 588×520 sprites (centre and width), for the round icon in the small bubble. */
@@ -35,6 +36,17 @@ const TAWAN_CROP = Object.fromEntries(Object.entries({
     neutral: [278, 122], tired: [282, 115], pious: [278, 121],
     exhausted: [262, 123], shocked: [280, 119], confused: [240, 137],
 }).map(([mood, [x, y]]) => [mood, { x: x / 588, y: y / 520, size: 280 / 588 }]));
+
+/** Every companion that ships with the extension: read-only, like user-made ones plus a crop per image. */
+const BUILTINS = Object.freeze([TAWAN, ...BUILTIN_COMPANIONS.map(c => Object.freeze({
+    id: c.id, name: c.name, color: c.color, crop: c.crop, errorImages: c.errorImages, lines: c.lines,
+    images: c.images.map(img => ({
+        id: img.id, name: img.name,
+        url: new URL(`sprites/${c.folder}/${img.id}.webp`, BASE_URL).href,
+        crop: { x: img.crop[0], y: img.crop[1], size: img.crop[2] },
+    })),
+}))]);
+const isBuiltin = comp => BUILTINS.includes(comp);
 
 const DEFAULTS = Object.freeze({
     enabled: true,
@@ -86,7 +98,7 @@ function notify(type, message) {
 
 function activeCompanion() {
     const s = settings();
-    return s.companions.find(c => c.id === s.active) ?? TAWAN;
+    return BUILTINS.find(c => c.id === s.active) ?? s.companions.find(c => c.id === s.active) ?? TAWAN;
 }
 
 /**
@@ -97,18 +109,18 @@ function imageFor(comp, rule) {
     const images = comp.images ?? [];
     if (!images.length) return { url: builtinSprite(rule.mood), builtin: true };
     const img = images.find(i => i.id === comp.errorImages?.[rule.id]) ?? images[0];
-    return { url: img.url, builtin: false };
+    return { url: img.url, builtin: false, crop: img.crop };
 }
 
 /**
  * The round icon for this error: the companion's own icon image if it has one (fills the circle),
- * else its picture with the companion's crop (Tawan's sprites: his per-mood crop).
+ * else its picture with the companion's crop (built-in sprites: their own crop each).
  * @returns {{ url: string, crop: { x: number, y: number, size: number } | null }} crop null = fill
  */
 function iconFor(comp, rule) {
     if (comp.icon) return { url: comp.icon, crop: null };
     const img = imageFor(comp, rule);
-    return { url: img.url, crop: img.builtin ? TAWAN_CROP[rule.mood] : sanitizeCrop(comp.crop) };
+    return { url: img.url, crop: img.builtin ? TAWAN_CROP[rule.mood] : img.crop ?? sanitizeCrop(comp.crop) };
 }
 
 /** Show `icon` inside `circle` (a d×d box, overflow hidden, holding one <img>). */
@@ -140,7 +152,7 @@ function applyColors(el, comp) {
 const newId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 function uniqueName(name, exceptId) {
-    const taken = new Set([TAWAN.name, ...settings().companions.filter(c => c.id !== exceptId).map(c => c.name)]);
+    const taken = new Set([...BUILTINS.map(c => c.name), ...settings().companions.filter(c => c.id !== exceptId).map(c => c.name)]);
     if (!taken.has(name)) return name;
     for (let i = 2; ; i++) {
         const candidate = `${name} (${i})`;
@@ -580,14 +592,15 @@ function renderCompanionSelect() {
     const select = /** @type {HTMLSelectElement} */ ($id('ec_comp'));
     if (!select) return;
     const s = settings();
-    select.innerHTML = [TAWAN, ...s.companions]
-        .map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c === TAWAN ? ' (มากับ extension)' : ''}</option>`).join('');
-    select.value = activeCompanion().id;
-    const builtin = activeCompanion() === TAWAN;
+    select.innerHTML = [...BUILTINS, ...s.companions]
+        .map(c => `<option value="${esc(c.id)}">${esc(c.name)}${isBuiltin(c) ? ' (มากับ extension)' : ''}</option>`).join('');
+    const comp = activeCompanion();
+    select.value = comp.id;
+    const builtin = isBuiltin(comp);
     $id('ec_comp_del').classList.toggle('disabled', builtin);
     $id('ec_comp_export').classList.toggle('disabled', builtin);
     $id('ec_comp_copy').classList.toggle('disabled', builtin);
-    $id('ec_comp_edit').title = builtin ? 'สร้างคอมพาเนียนใหม่โดยเริ่มจากบทพูดของตะวัน' : 'แก้ไข';
+    $id('ec_comp_edit').title = builtin ? `สร้างคอมพาเนียนใหม่โดยเริ่มจาก${comp.name}` : 'แก้ไข';
 }
 
 function setActive(id) {
@@ -605,14 +618,15 @@ function bindCompanionControls() {
     $id('ec_comp_new').addEventListener('click', () => openEditor(null));
     $id('ec_comp_edit').addEventListener('click', () => {
         const comp = activeCompanion();
-        if (comp !== TAWAN) return openEditor(comp);
-        // Tawan can't be edited: start a new one from his lines
-        const lines = Object.fromEntries(ALL_RULES.map(r => [r.id, structuredClone(r.lines)]));
-        openEditor(null, { name: `${TAWAN.name} (สำเนา)`, color: TAWAN.color, images: [], errorImages: {}, lines });
+        if (!isBuiltin(comp)) return openEditor(comp);
+        // built-in companions can't be edited: start a new one from a copy
+        const lines = Object.fromEntries(ALL_RULES.map(r => [r.id, structuredClone(linesFor(comp, r))]));
+        const images = comp.images.map(({ id, name, url }) => ({ id, name, url }));
+        openEditor(null, { name: `${comp.name} (สำเนา)`, color: comp.color, images, errorImages: { ...comp.errorImages }, crop: comp.crop, lines });
     });
     $id('ec_comp_del').addEventListener('click', async () => {
         const comp = activeCompanion();
-        if (comp === TAWAN) return;
+        if (isBuiltin(comp)) return;
         if (!(await confirmBox(`ลบคอมพาเนียน "${comp.name}"?`))) return;
         const s = settings();
         s.companions = s.companions.filter(c => c.id !== comp.id);
@@ -636,7 +650,7 @@ function bindCompanionControls() {
 
     $id('ec_comp_export').addEventListener('click', () => {
         const comp = activeCompanion();
-        if (comp === TAWAN) return;
+        if (isBuiltin(comp)) return;
         const blob = new Blob([JSON.stringify(exportCompanion(comp), null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -648,7 +662,7 @@ function bindCompanionControls() {
     });
     $id('ec_comp_copy').addEventListener('click', () => {
         const comp = activeCompanion();
-        if (comp === TAWAN) return;
+        if (isBuiltin(comp)) return;
         navigator.clipboard?.writeText(JSON.stringify(exportCompanion(comp))).then(
             () => notify('success', `คัดลอก "${comp.name}" แล้ว · วางให้เพื่อนได้เลย`),
             () => notify('warning', 'คัดลอกไม่ได้ ลองใช้ปุ่มส่งออกแทน'));
@@ -1003,7 +1017,7 @@ async function checkForNewVersion() {
 
 async function reloadWithFreshFiles() {
     try {
-        await Promise.all(['index.js', 'lib.js', 'errors.js', 'style.css', 'manifest.json'].map(f =>
+        await Promise.all(['index.js', 'lib.js', 'errors.js', 'companions.js', 'style.css', 'manifest.json'].map(f =>
             fetch(new URL(f, BASE_URL), { cache: 'reload' }).catch(() => null)));
     } finally {
         location.reload();
