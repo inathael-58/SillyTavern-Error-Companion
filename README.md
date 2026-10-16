@@ -118,8 +118,5 @@ id ของ error ที่ใช้ใน `lines` และ `errorImages`: `st
 - `lib.js` — จับคู่ข้อความกับ error และเลือกบทพูด (ไม่มี DOM) · ทดสอบด้วย `npm test`
 - `sprites/tawan/` — ภาพตะวัน 6 สีหน้า (neutral, tired, pious, exhausted, shocked, confused) ขนาด 588×520 พื้นโปร่งใส
 - `tools/slice_sheet.py` — หั่นภาพรวม 3×2 เป็น sprite: ลบหมอกพื้นหลังที่ตัวลบพื้นหลังทิ้งไว้ และจัดทุกรูปให้ตรงกัน
-- `sprites/mint/` — mINT 6 รูป (happy, loading, pray, lowbatt, shocked, confused) ขนาด 783×696
-- `sprites/hengheng/` — เฮงเฮง 9 รูป (smug, yawn, pray, dizzy, shocked, confused, keyboard, mischief, beg) ขนาด 795×720
-- `tools/key_sheet.py` — ตัดภาพรวมที่มีพื้นหลังสีเรียบ (ไม่โปร่งใส) เป็น sprite: ใช้โมเดล isnet-anime แยกตัวละคร + ตัดพื้นหลังด้วยสี สำหรับเอฟเฟกต์ลอย ๆ ลบหมอกขาวและเงาที่พื้น จัดทุกรูปให้ตรงกัน (วิธีใช้อยู่หัวไฟล์)
 
 เจอ error ที่ตะวันยังไม่รู้จัก ส่งข้อความต้นฉบับมาได้เลย (ลบ API key ออกก่อน)
