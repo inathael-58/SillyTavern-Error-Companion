@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { BUILTIN_COMPANIONS } from '../companions.js';
+import { BUILTIN_COMPANIONS, CHARACTER_LINES, EXPRESSION_FOR, SERAPHINA } from '../companions.js';
 import { RULES, UNKNOWN } from '../errors.js';
 import { sanitizeCompanion } from '../lib.js';
 
@@ -38,3 +38,32 @@ for (const comp of BUILTIN_COMPANIONS) {
         assert.deepEqual(Object.keys(copy.lines).sort(), [...RULE_IDS].sort());
     });
 }
+
+/** The labels SillyTavern's expression classifier uses (and Seraphina's sprites are named after). */
+const LABELS = ['admiration', 'amusement', 'anger', 'annoyance', 'approval', 'caring', 'confusion', 'curiosity', 'desire',
+    'disappointment', 'disapproval', 'disgust', 'embarrassment', 'excitement', 'fear', 'gratitude', 'grief', 'joy', 'love',
+    'nervousness', 'neutral', 'optimism', 'pride', 'realization', 'relief', 'remorse', 'sadness', 'surprise'];
+
+test('every error has expressions to look for, all real labels', () => {
+    assert.deepEqual(Object.keys(EXPRESSION_FOR).sort(), [...RULE_IDS].sort());
+    for (const [id, labels] of Object.entries(EXPRESSION_FOR)) {
+        assert.ok(labels.length, id);
+        for (const l of labels) assert.ok(LABELS.includes(l), `${id}: ${l}`);
+    }
+});
+
+for (const [who, lines] of [['Seraphina', SERAPHINA.lines], ['the chat character', CHARACTER_LINES]]) {
+    test(`${who}: own lines for every error`, () => {
+        assert.deepEqual(Object.keys(lines).sort(), [...RULE_IDS].sort());
+        for (const id of RULE_IDS) {
+            assert.equal(lines[id][0].from, 1, id);
+            for (const t of lines[id]) assert.ok(t.text.length && t.text.every(s => s.trim()), id);
+        }
+    });
+}
+
+test('lines about the chat character name them', () => {
+    for (const [id, tiers] of Object.entries(CHARACTER_LINES)) {
+        for (const t of tiers) for (const s of t.text) assert.ok(s.includes('{name}'), `${id}: ${s}`);
+    }
+});
