@@ -25,12 +25,13 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.4.0'; // keep in sync with manifest.json
+const VERSION = '0.4.1'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
 const TAWAN = Object.freeze({ id: 'tawan', name: 'ตะวัน', color: DEFAULT_COLOR, images: [], errorImages: {}, lines: {} });
-const builtinSprite = mood => new URL(`sprites/tawan/${mood}.webp`, BASE_URL).href;
+/** Sprite URLs carry the version, so a browser drops its cached copy when a picture is redrawn. */
+const builtinSprite = mood => new URL(`sprites/tawan/${mood}.webp?v=${VERSION}`, BASE_URL).href;
 /** Tawan's head in each of his 588×520 sprites (centre and width), for the round icon in the small bubble. */
 const TAWAN_CROP = Object.fromEntries(Object.entries({
     neutral: [278, 122], tired: [282, 115], pious: [278, 121],
@@ -42,7 +43,7 @@ const BUILTINS = Object.freeze([TAWAN, ...BUILTIN_COMPANIONS.map(c => Object.fre
     id: c.id, name: c.name, color: c.color, crop: c.crop, errorImages: c.errorImages, lines: c.lines,
     images: c.images.map(img => ({
         id: img.id, name: img.name,
-        url: new URL(`sprites/${c.folder}/${img.id}.webp`, BASE_URL).href,
+        url: new URL(`sprites/${c.folder}/${img.id}.webp?v=${VERSION}`, BASE_URL).href,
         crop: { x: img.crop[0], y: img.crop[1], size: img.crop[2] },
     })),
 }))]);
