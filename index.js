@@ -20,14 +20,14 @@
 import { BUILTIN_COMPANIONS, CHARACTER_LINES, EXPRESSION_FOR, SERAPHINA } from './companions.js';
 import { RULES, UNKNOWN } from './errors.js';
 import {
-    COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, MOODS,
+    COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, MAX_DATA_URL, MOODS,
     cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, pickLine, plainText,
     sanitizeCompanion, sanitizeCrop,
 } from './lib.js';
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.5.0'; // keep in sync with manifest.json
+const VERSION = '0.5.1'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
@@ -792,7 +792,7 @@ function openEditor(comp, start) {
             </div>
 
             <div class="ec_set_title">รูป</div>
-            <small class="ec_note">เพิ่มได้หลายรูป ตั้งชื่อให้จำง่าย แล้วเลือกใน error แต่ละแบบด้านล่างว่าจะใช้รูปไหน · error ที่ไม่ได้เลือกใช้รูปแรก · ไม่มีรูปเลย = ใช้รูปของตะวัน · ภาพครึ่งตัว พื้นหลังโปร่งใส ขอบล่างตัดตรง จะดูดีที่สุด · ถ้าจะแชร์ ให้ใช้ลิงก์ที่เปิดได้จากทุกเครื่อง (เช่น catbox.moe, imgur)</small>
+            <small class="ec_note">เพิ่มได้หลายรูป ตั้งชื่อให้จำง่าย แล้วเลือกใน error แต่ละแบบด้านล่างว่าจะใช้รูปไหน · error ที่ไม่ได้เลือกใช้รูปแรก · ไม่มีรูปเลย = ใช้รูปของตะวัน · ภาพครึ่งตัว พื้นหลังโปร่งใส ขอบล่างตัดตรง จะดูดีที่สุด · กด 📁 เพื่อเลือกรูปจากเครื่อง (รูปจะติดไปกับไฟล์ที่ส่งออก แชร์ให้เพื่อนได้เลย) หรือวางลิงก์รูปที่เปิดได้จากทุกเครื่อง</small>
             <div id="ec_ed_images" class="ec_ed_images"></div>
             <div class="ec_btns"><div id="ec_ed_addimg" class="menu_button"><i class="fa-solid fa-plus"></i> เพิ่มรูป</div></div>
 
@@ -865,6 +865,21 @@ function openEditor(comp, start) {
         refreshPicks(box);
         updatePreview();
     });
+    box.querySelector('#ec_ed_images').addEventListener('change', async e => {
+        const input = /** @type {HTMLInputElement} */ (e.target);
+        if (input.type !== 'file') return; // a name or link field losing focus
+        const file = input.files?.[0];
+        input.value = ''; // so picking the same file again still fires
+        if (!file) return;
+        const row = input.closest('.ec_ed_img');
+        const url = await imageFileToDataUrl(file);
+        if (!url) return notify('warning', 'เปิดรูปนี้ไม่ได้ ลองไฟล์ PNG, JPG หรือ WebP');
+        /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value = url;
+        const name = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname'));
+        if (!name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '').slice(0, 30);
+        refreshPicks(box);
+        updatePreview();
+    });
     box.querySelector('#ec_ed_crop_reset').addEventListener('click', () => { setCropInputs(DEFAULT_CROP); updatePreview(); });
     box.querySelector('#ec_ed_save').addEventListener('click', saveEditor);
     box.querySelector('#ec_ed_try').addEventListener('click', () => {
@@ -894,13 +909,41 @@ function addImageRow(box, img) {
         <img class="ec_ed_thumb" alt="">
         <div class="ec_ed_img_fields">
             <input type="text" class="text_pole ec_ed_imgname" maxlength="30" placeholder="ชื่อรูป เช่น ยิ้ม, ตกใจ, ร้องไห้">
-            <input type="url" class="text_pole ec_ed_url" placeholder="https://…" autocomplete="off" spellcheck="false">
+            <div class="ec_ed_urlrow">
+                <input type="url" class="text_pole ec_ed_url" placeholder="https://… หรือกด 📁" autocomplete="off" spellcheck="false">
+                <label class="menu_button ec_ed_pickfile" title="เลือกรูปจากเครื่อง (รูปจะติดไปกับไฟล์ที่ส่งออกด้วย)"><i class="fa-solid fa-folder-open"></i><input type="file" accept="image/*" hidden></label>
+            </div>
         </div>
         <div class="menu_button ec_ed_delimg" title="ลบรูปนี้"><i class="fa-solid fa-trash"></i></div>`;
     /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value = img.name ?? '';
     /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value = img.url ?? '';
     list.append(row);
     return row;
+}
+
+/**
+ * A picture from the user's device as a data:image URL that travels inside the
+ * companion (settings and exported file): at most 720 px tall, WebP when the
+ * browser can make it, made smaller until it fits the size limit.
+ * @returns {Promise<string>} '' if it can't be read
+ */
+async function imageFileToDataUrl(file) {
+    let bitmap;
+    try {
+        bitmap = await createImageBitmap(file);
+    } catch {
+        return '';
+    }
+    let scale = Math.min(1, 720 / bitmap.height, 1000 / bitmap.width);
+    for (let tries = 0; tries < 6; tries++, scale *= 0.8) {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        const url = canvas.toDataURL('image/webp', 0.9); // browsers without WebP give PNG
+        if (url.length <= MAX_DATA_URL && isSafeImageUrl(url)) return url;
+    }
+    return '';
 }
 
 /** The image dropdown of every error follows the image list (keeping each choice while it exists). */

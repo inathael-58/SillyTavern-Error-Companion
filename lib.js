@@ -87,7 +87,7 @@ const MAX_NAME = 40;
 const MAX_LINES = 50;
 const MAX_LINE = 300;
 const MAX_URL = 2048;
-const MAX_DATA_URL = 1_500_000; // a pasted data:image URL; it lives in SillyTavern's settings file
+export const MAX_DATA_URL = 1_500_000; // a pasted data:image URL; it lives in SillyTavern's settings file
 
 /**
  * One line per sentence; "[3] text" = only from the 3rd time today on.

@@ -67,3 +67,13 @@ test('lines about the chat character name them', () => {
         for (const t of tiers) for (const s of t.text) assert.ok(s.includes('{name}'), `${id}: ${s}`);
     }
 });
+
+test('the example in examples/ imports and speaks for every error', async () => {
+    const { readFileSync } = await import('node:fs');
+    const data = JSON.parse(readFileSync(new URL('../examples/mochi/mochi.companion.json', import.meta.url), 'utf8'));
+    const comp = sanitizeCompanion(data);
+    assert.equal(comp.images.length, 5);
+    assert.ok(comp.images.every(i => i.url.startsWith('data:image/webp;base64,')));
+    assert.deepEqual(Object.keys(comp.lines).sort(), [...RULE_IDS].sort());
+    assert.deepEqual(Object.keys(comp.errorImages).sort(), [...RULE_IDS].sort());
+});

@@ -725,6 +725,18 @@
     margin: 0;
 }
 
+.ec_settings .ec_ed_urlrow {
+    display: flex;
+    gap: 4px;
+    min-width: 0;
+}
+
+.ec_settings .ec_ed_urlrow input {
+    flex: 1;
+    min-width: 0;
+}
+
+.ec_settings .ec_ed_pickfile,
 .ec_settings .ec_ed_delimg {
     width: auto;
     margin: 0;
