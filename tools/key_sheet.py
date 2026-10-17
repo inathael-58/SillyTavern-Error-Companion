@@ -9,7 +9,7 @@
 What made sprites/mint and sprites/hengheng:
 
     --grid 3x2 --anchor waist                                  (mINT)
-    --grid 3x3 --anchor ground --drop-shadows --solid-inside   (เฮงเฮง)
+    --grid 3x3 --anchor ground --drop-shadows --solid-inside --keep-haze --core 35   (เฮงเฮง)
 
 - The body comes from the isnet-anime segmentation model, so hair, white
   clothes and skin that are close to the background colour stay solid.
@@ -41,7 +41,10 @@ def segment(im, cols, rows, model):
     pad = 24
     for r in range(rows):
         for c in range(cols):
-            x0, y0, x1, y1 = c * W // cols, r * H // rows, (c + 1) * W // cols, (r + 1) * H // rows
+            # a margin into the neighbours, so a tail crossing the grid line is seen whole
+            mx, my = W // cols // 8, H // rows // 8
+            x0, y0 = max(0, c * W // cols - mx), max(0, r * H // rows - my)
+            x1, y1 = min(W, (c + 1) * W // cols + mx), min(H, (r + 1) * H // rows + my)
             cell = im.crop((x0, y0, x1, y1))
             cw, ch = cell.size
             side = max(cw, ch) + 2 * pad
@@ -53,11 +56,11 @@ def segment(im, cols, rows, model):
             pred = sess.run(None, {inp: x.astype(np.float32)})[0][0, 0]
             pred = (pred - pred.min()) / max(pred.max() - pred.min(), 1e-6)
             m = Image.fromarray((pred * 255).astype(np.uint8)).resize((side, side), Image.BILINEAR)
-            mask[y0:y1, x0:x1] = np.asarray(m).astype(np.float32)[oy:oy + ch, ox:ox + cw] / 255
+            mask[y0:y1, x0:x1] = np.maximum(mask[y0:y1, x0:x1], np.asarray(m).astype(np.float32)[oy:oy + ch, ox:ox + cw] / 255)
     return mask
 
 
-def matte(rgb, model_mask, lo, hi, core=80, glow=20, drop_shadows=False, solid_inside=False):
+def matte(rgb, model_mask, lo, hi, core=80, glow=20, drop_shadows=False, solid_inside=False, keep_haze=False):
     h, w, _ = rgb.shape
     border = np.concatenate([rgb[:6].reshape(-1, 3), rgb[-6:].reshape(-1, 3),
                              rgb[:, :6].reshape(-1, 3), rgb[:, -6:].reshape(-1, 3)])
@@ -68,6 +71,10 @@ def matte(rgb, model_mask, lo, hi, core=80, glow=20, drop_shadows=False, solid_i
     # figure (background lightened) does not count as figure
     u = (255 - bg) / max(np.linalg.norm(255 - bg), 1e-6)
     lift = np.maximum(diff @ u, 0)
+    if keep_haze:
+        # no haze on this sheet: pale things lighter than the background
+        # (splashing water, sparkles) are part of the picture
+        lift = np.zeros_like(lift)
     off = np.sqrt(np.maximum(dist ** 2 - lift ** 2, 0))
     # at the body's edge, soft ground shadows (background darkened) do not
     # count either. Only there: neon effects can be darker than the background
@@ -149,6 +156,7 @@ def main():
     p.add_argument('--glow', type=int, default=20, help='px of glow kept around an effect')
     p.add_argument('--drop-shadows', action='store_true', help='also remove ground shadows the model kept')
     p.add_argument('--solid-inside', action='store_true', help='fill see-through spots well inside the figure (pale eyes on a pale background)')
+    p.add_argument('--keep-haze', action='store_true', help='keep pale things lighter than the background (water splash); for sheets with no haze around the figure')
     p.add_argument('--max-height', type=int, default=720)
     p.add_argument('--margin', type=int, default=8)
     args = p.parse_args()
@@ -159,15 +167,25 @@ def main():
     im = Image.open(args.sheet).convert('RGB')
     rgb = np.asarray(im).astype(np.float32)
     mask = segment(im, cols, rows, args.model)
-    rgba, bg = matte(rgb, mask, args.lo, args.hi, args.core, args.glow, args.drop_shadows, args.solid_inside)
+    rgba, bg = matte(rgb, mask, args.lo, args.hi, args.core, args.glow, args.drop_shadows, args.solid_inside, args.keep_haze)
     print('background', bg)
 
+    # a tail or a splash may cross the grid line: every separate piece goes
+    # to the figure whose cell holds its centre; specks are dropped
     W, H = im.size
+    solid = rgba[..., 3] > 8
+    pieces, n = ndi.label(ndi.binary_dilation(solid, iterations=3), structure=np.ones((3, 3)))
+    pieces[~solid] = 0
+    idx = np.arange(1, n + 1)
+    size = ndi.sum(solid, pieces, idx)
+    cy, cx_ = (np.array(v) for v in zip(*ndi.center_of_mass(solid, pieces, idx)))
+    owner = np.full(n + 1, -1)
+    owner[1:] = np.where(size >= 30, (cy * rows // H).astype(int) * cols + (cx_ * cols // W).astype(int), -1)
+    cell_of = owner[pieces]
     cuts = []
     for i in range(cols * rows):
-        r, c = divmod(i, cols)
-        x0, y0, x1, y1 = c * W // cols, r * H // rows, (c + 1) * W // cols, (r + 1) * H // rows
-        cell = rgba[y0:y1, x0:x1]
+        cell = rgba.copy()
+        cell[cell_of != i, 3] = 0
         a = cell[..., 3] > 8
         ys, xs = np.nonzero(a)
         top, bottom, left, right = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
