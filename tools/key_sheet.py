@@ -8,7 +8,7 @@
 
 What made sprites/mint and sprites/hengheng:
 
-    --grid 3x2 --anchor waist                                  (mINT)
+    --grid 3x2 --anchor waist --use-alpha                      (mINT, sheet cleaned elsewhere)
     --grid 3x3 --anchor ground --drop-shadows --solid-inside --keep-haze --core 35   (เฮงเฮง)
 
 - The body comes from the isnet-anime segmentation model, so hair, white
@@ -149,7 +149,7 @@ def main():
     p.add_argument('--grid', default='3x2', help='COLSxROWS')
     p.add_argument('--names', required=True, help='comma separated, row by row')
     p.add_argument('--anchor', choices=['waist', 'ground'], default='waist')
-    p.add_argument('--model', required=True)
+    p.add_argument('--model', help='isnet-anime.onnx (not needed with --use-alpha)')
     p.add_argument('--lo', type=float, default=10)
     p.add_argument('--hi', type=float, default=45)
     p.add_argument('--core', type=float, default=80, help='colour distance an effect needs at its centre')
@@ -157,6 +157,7 @@ def main():
     p.add_argument('--drop-shadows', action='store_true', help='also remove ground shadows the model kept')
     p.add_argument('--solid-inside', action='store_true', help='fill see-through spots well inside the figure (pale eyes on a pale background)')
     p.add_argument('--keep-haze', action='store_true', help='keep pale things lighter than the background (water splash); for sheets with no haze around the figure')
+    p.add_argument('--use-alpha', action='store_true', help='the sheet is already transparent: keep its alpha, only tidy and line up')
     p.add_argument('--max-height', type=int, default=720)
     p.add_argument('--margin', type=int, default=8)
     args = p.parse_args()
@@ -164,11 +165,18 @@ def main():
     cols, rows = map(int, args.grid.lower().split('x'))
     names = args.names.split(',')
     assert len(names) == cols * rows, 'need one name per cell'
-    im = Image.open(args.sheet).convert('RGB')
-    rgb = np.asarray(im).astype(np.float32)
-    mask = segment(im, cols, rows, args.model)
-    rgba, bg = matte(rgb, mask, args.lo, args.hi, args.core, args.glow, args.drop_shadows, args.solid_inside, args.keep_haze)
-    print('background', bg)
+    src = Image.open(args.sheet)
+    im = src.convert('RGB')
+    if args.use_alpha:
+        # cleaned elsewhere: drop the faint haze a background remover leaves
+        rgba = np.asarray(src.convert('RGBA')).copy()
+        rgba[rgba[..., 3] < 12, 3] = 0
+    else:
+        assert args.model, '--model is needed unless --use-alpha'
+        rgb = np.asarray(im).astype(np.float32)
+        mask = segment(im, cols, rows, args.model)
+        rgba, bg = matte(rgb, mask, args.lo, args.hi, args.core, args.glow, args.drop_shadows, args.solid_inside, args.keep_haze)
+        print('background', bg)
 
     # a tail or a splash may cross the grid line: every separate piece goes
     # to the figure whose cell holds its centre; specks are dropped
@@ -190,6 +198,15 @@ def main():
         ys, xs = np.nonzero(a)
         top, bottom, left, right = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
         if args.anchor == 'waist':
+            # a straight cut at the waist: drop the rows where it frays out
+            # (and anything stray below it)
+            width = a.sum(1)
+            ref = np.percentile(width[max(top, bottom - 80):bottom], 75)
+            bottom = int(np.nonzero(width[:bottom] >= 0.9 * ref)[0].max()) + 1
+            cell[bottom:, 3] = 0
+            a[bottom:] = False
+            ys, xs = np.nonzero(a)
+            top, left, right = ys.min(), xs.min(), xs.max() + 1
             # centre on the body where it is cut off, not on flying hair
             band = a[bottom - 6:bottom]
             bx = np.nonzero(band.any(0))[0]

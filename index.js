@@ -8,14 +8,16 @@
  *   • full box or a small bubble in the corner (setting: always full, full the
  *     first time each day then small, or always small)
  *   • the more often an error shows up today, the more it has to say about it
- *   • built-in companions: Tawan, mINT and HengHeng; users can make their own
- *     (name, colour, image URLs, lines per error) and share them as JSON files
+ *   • built-in companions: Tawan, mINT and HengHeng; Seraphina and "the
+ *     character in this chat" use SillyTavern's own Character Expressions
+ *     sprites; users can make their own (name, colour, image URLs, lines per
+ *     error) and share them as JSON files
  *
  * The original toast still shows (optionally hidden). Matching and companion
  * files live in lib.js, what the errors mean in errors.js.
  */
 
-import { BUILTIN_COMPANIONS } from './companions.js';
+import { BUILTIN_COMPANIONS, CHARACTER_LINES, EXPRESSION_FOR, SERAPHINA } from './companions.js';
 import { RULES, UNKNOWN } from './errors.js';
 import {
     COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, MOODS,
@@ -25,7 +27,7 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.4.1'; // keep in sync with manifest.json
+const VERSION = '0.5.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
@@ -47,7 +49,72 @@ const BUILTINS = Object.freeze([TAWAN, ...BUILTIN_COMPANIONS.map(c => Object.fre
         crop: { x: img.crop[0], y: img.crop[1], size: img.crop[2] },
     })),
 }))]);
-const isBuiltin = comp => BUILTINS.includes(comp);
+
+/**
+ * Companions made from a character's Character Expressions sprites, read from
+ * SillyTavern when needed: Seraphina (ST's default character, when her sprites
+ * are there) and whoever this chat is with. null = not available right now.
+ */
+const live = { seraphina: null, char: null };
+const CHAR_ID = 'char';
+const CHAR_COLOR = '#7b6aa8';
+const isBuiltin = comp => BUILTINS.includes(comp) || comp === live.seraphina || comp === live.char;
+
+/** @returns {Promise<{ label: string, path: string }[]>} */
+async function spritesOf(folder) {
+    try {
+        const res = await fetch(`/api/sprites/get?name=${encodeURIComponent(folder)}`, { cache: 'no-store' });
+        const list = res.ok ? await res.json() : [];
+        return Array.isArray(list) ? list.filter(x => x && typeof x.label === 'string' && typeof x.path === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
+/** A companion whose pictures are these sprites: one image per expression, each error on its best fit. */
+function fromSprites(base, sprites) {
+    const images = [];
+    for (const { label, path } of sprites) {
+        if (!images.some(i => i.id === label)) images.push({ id: label, name: label, url: path });
+    }
+    images.sort((a, b) => (a.id === 'neutral' ? -1 : b.id === 'neutral' ? 1 : 0));
+    const errorImages = {};
+    for (const rule of ALL_RULES) {
+        const pick = (EXPRESSION_FOR[rule.id] ?? []).find(label => images.some(i => i.id === label));
+        if (pick) errorImages[rule.id] = pick;
+    }
+    return Object.freeze({ ...base, images, errorImages });
+}
+
+async function loadSeraphina() {
+    const sprites = await spritesOf(SERAPHINA.folder);
+    live.seraphina = sprites.length ? fromSprites({
+        id: SERAPHINA.id, name: SERAPHINA.name, color: SERAPHINA.color, crop: SERAPHINA.crop, lines: SERAPHINA.lines,
+    }, sprites) : null;
+}
+
+/** The sprite folder ST's Character Expressions uses for a character: an override, else the name. */
+function spriteFolderOf(char) {
+    const key = String(char.avatar ?? '').replace(/\.[^/.]+$/, '');
+    const override = ctx().extensionSettings?.expressionOverrides?.find?.(e => e.name === key)?.path;
+    return override || char.name;
+}
+
+/** Whoever this chat is with (not in group chats); without sprites, their avatar stands in. */
+async function loadChatCharacter() {
+    const c = ctx();
+    const char = c.groupId ? null : c.characters?.[c.characterId];
+    if (!char?.name) {
+        live.char = null;
+        return;
+    }
+    const thumb = typeof c.getThumbnailUrl === 'function' ? c.getThumbnailUrl('avatar', char.avatar) : '';
+    const base = { id: CHAR_ID, name: char.name, color: CHAR_COLOR, lines: CHARACTER_LINES, icon: thumb || undefined };
+    const sprites = await spritesOf(spriteFolderOf(char));
+    if (c.characters?.[c.characterId] !== char) return; // the chat changed meanwhile
+    live.char = sprites.length ? fromSprites(base, sprites)
+        : Object.freeze({ ...base, errorImages: {}, images: [{ id: 'avatar', name: 'avatar', url: `/characters/${encodeURIComponent(char.avatar)}` }] });
+}
 
 const DEFAULTS = Object.freeze({
     enabled: true,
@@ -99,6 +166,8 @@ function notify(type, message) {
 
 function activeCompanion() {
     const s = settings();
+    if (s.active === SERAPHINA.id) return live.seraphina ?? TAWAN;
+    if (s.active === CHAR_ID) return live.char ?? TAWAN;
     return BUILTINS.find(c => c.id === s.active) ?? s.companions.find(c => c.id === s.active) ?? TAWAN;
 }
 
@@ -153,7 +222,7 @@ function applyColors(el, comp) {
 const newId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 function uniqueName(name, exceptId) {
-    const taken = new Set([...BUILTINS.map(c => c.name), ...settings().companions.filter(c => c.id !== exceptId).map(c => c.name)]);
+    const taken = new Set([...BUILTINS.map(c => c.name), SERAPHINA.name, ...settings().companions.filter(c => c.id !== exceptId).map(c => c.name)]);
     if (!taken.has(name)) return name;
     for (let i = 2; ; i++) {
         const candidate = `${name} (${i})`;
@@ -267,7 +336,8 @@ function show(rule, raw, count, force, comp = activeCompanion()) {
     }
     // a vague follow-up ("could not get a reply") never covers the specific error it came with
     if (rule.followup && current && current.rule !== rule && (fullOpen || miniOpen())) return;
-    current = { rule, raw, count, comp, line: pickLine(linesFor(comp, rule), count), hits: 1 };
+    const line = pickLine(linesFor(comp, rule), count).replaceAll('{name}', comp.name);
+    current = { rule, raw, count, comp, line, hits: 1 };
     const full = force ? force === 'full' : fullOpen || mode === 'full' || (mode === 'first' && count <= 1);
     if (full) openFull(); else openMini();
 }
@@ -593,10 +663,15 @@ function renderCompanionSelect() {
     const select = /** @type {HTMLSelectElement} */ ($id('ec_comp'));
     if (!select) return;
     const s = settings();
-    select.innerHTML = [...BUILTINS, ...s.companions]
-        .map(c => `<option value="${esc(c.id)}">${esc(c.name)}${isBuiltin(c) ? ' (มากับ extension)' : ''}</option>`).join('');
+    const options = BUILTINS.map(c => [c.id, `${c.name} (มากับ extension)`]);
+    if (live.seraphina || s.active === SERAPHINA.id) {
+        options.push([SERAPHINA.id, live.seraphina ? `${SERAPHINA.name} (expression ของ ST)` : `${SERAPHINA.name} (ไม่พบ expression · ใช้ตะวันแทน)`]);
+    }
+    options.push([CHAR_ID, live.char ? `ตัวละครที่คุยอยู่ (ตอนนี้: ${live.char.name})` : 'ตัวละครที่คุยอยู่ (ยังไม่ได้เปิดแชต · ใช้ตะวันแทน)']);
+    options.push(...s.companions.map(c => [c.id, c.name]));
+    select.innerHTML = options.map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join('');
     const comp = activeCompanion();
-    select.value = comp.id;
+    select.value = options.some(([id]) => id === s.active) ? s.active : comp.id;
     const builtin = isBuiltin(comp);
     $id('ec_comp_del').classList.toggle('disabled', builtin);
     $id('ec_comp_export').classList.toggle('disabled', builtin);
@@ -735,7 +810,7 @@ function openEditor(comp, start) {
                 <input type="url" id="ec_ed_icon" class="text_pole" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
 
             <div class="ec_set_title">error แต่ละแบบ</div>
-            <small class="ec_note">เลือกรูปและเขียนบทพูด · บรรทัดละประโยค (สุ่มมาหนึ่งประโยค) · ขึ้นต้นด้วย <code>[3]</code> = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · <code>{n}</code> = จำนวนครั้ง · ว่าง = ใช้บทของตะวัน · คำอธิบายใต้บทพูดใช้ของกลางเหมือนกันทุกตัว</small>
+            <small class="ec_note">เลือกรูปและเขียนบทพูด · บรรทัดละประโยค (สุ่มมาหนึ่งประโยค) · ขึ้นต้นด้วย <code>[3]</code> = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · <code>{n}</code> = จำนวนครั้ง · <code>{name}</code> = ชื่อคอมพาเนียน · ว่าง = ใช้บทของตะวัน · คำอธิบายใต้บทพูดใช้ของกลางเหมือนกันทุกตัว</small>
             ${ALL_RULES.map(r => `
             <details class="ec_ed_rule" data-rule="${r.id}">
                 <summary><span class="ec_ed_face ec_ed_face_sm"><img alt=""></span><span>${esc(r.name)}</span> <small class="ec_ed_mark"></small></summary>
@@ -1034,6 +1109,11 @@ function init() {
     hookToastr();
     renderSettings();
     registerCommand();
+    const refresh = () => { renderCompanionSelect(); renderSettingsList(); };
+    loadSeraphina().then(refresh);
+    loadChatCharacter().then(refresh);
+    const { eventSource, event_types } = ctx();
+    eventSource?.on?.(event_types?.CHAT_CHANGED, () => loadChatCharacter().then(refresh));
     // warm the cache so the first pop-up doesn't show an empty frame
     setTimeout(() => {
         const comp = activeCompanion();

@@ -17,14 +17,14 @@ export const BUILTIN_COMPANIONS = [
         name: 'mINT',
         color: '#2fa8d8',
         folder: 'mint',
-        crop: { x: 0.48, y: 0.40, size: 0.38 },
+        crop: { x: 0.5, y: 0.42, size: 0.34 },
         images: [
-            { id: 'happy', name: 'ยิ้มโบกมือ', crop: [0.52, 0.40, 0.38] },
-            { id: 'loading', name: 'กำลังโหลด', crop: [0.50, 0.42, 0.38] },
-            { id: 'pray', name: 'อธิษฐาน', crop: [0.46, 0.43, 0.38] },
-            { id: 'lowbatt', name: 'แบตหมด', crop: [0.49, 0.36, 0.38] },
-            { id: 'shocked', name: 'ตกใจ', crop: [0.47, 0.36, 0.38] },
-            { id: 'confused', name: 'งง', crop: [0.47, 0.40, 0.38] },
+            { id: 'happy', name: 'ยิ้มโบกมือ', crop: [0.47, 0.38, 0.34] },
+            { id: 'loading', name: 'กำลังโหลด', crop: [0.47, 0.45, 0.34] },
+            { id: 'pray', name: 'อธิษฐาน', crop: [0.51, 0.46, 0.34] },
+            { id: 'lowbatt', name: 'แบตหมด', crop: [0.50, 0.41, 0.34] },
+            { id: 'shocked', name: 'ตกใจ', crop: [0.53, 0.42, 0.34] },
+            { id: 'confused', name: 'งง', crop: [0.51, 0.44, 0.34] },
         ],
         errorImages: {
             stserver: 'shocked', import: 'confused', blocked: 'pray', prefill: 'confused', param: 'confused',
@@ -202,3 +202,164 @@ export const BUILTIN_COMPANIONS = [
         },
     },
 ];
+
+/**
+ * Which Character Expressions sprite fits each error, best first. Labels are
+ * the classifier's 28 (joy.png, joy-1.png and joy.happy.png are all "joy").
+ * The first label the character has wins; neutral, then any sprite, if none.
+ */
+export const EXPRESSION_FOR = {
+    stserver: ['surprise', 'fear', 'nervousness'],
+    import: ['confusion', 'curiosity'],
+    blocked: ['embarrassment', 'nervousness', 'remorse'],
+    prefill: ['confusion', 'curiosity'],
+    param: ['confusion', 'realization'],
+    overloaded: ['annoyance', 'disappointment', 'sadness'],
+    quota: ['disappointment', 'sadness', 'annoyance'],
+    credits: ['grief', 'sadness', 'disappointment'],
+    denied: ['fear', 'surprise', 'sadness'],
+    forbidden: ['disapproval', 'annoyance', 'confusion'],
+    key: ['confusion', 'disapproval'],
+    location: ['confusion', 'curiosity'],
+    context: ['nervousness', 'fear', 'surprise'],
+    empty: ['confusion', 'disappointment'],
+    model: ['confusion', 'curiosity'],
+    network: ['surprise', 'fear', 'nervousness'],
+    noreply: ['disappointment', 'sadness', 'confusion'],
+    server: ['surprise', 'fear', 'nervousness'],
+    unknown: ['curiosity', 'confusion', 'neutral'],
+};
+
+/**
+ * Companions whose pictures are a character's own Character Expressions
+ * sprites in SillyTavern, read when needed (nothing ships with the extension).
+ * folder: the sprite folder name; crop: where the face is (all sprites share a pose).
+ */
+export const SERAPHINA = {
+    id: 'seraphina',
+    name: 'Seraphina',
+    color: '#c2536b',
+    folder: 'Seraphina',
+    crop: { x: 0.45, y: 0.21, size: 0.38 },
+    lines: {
+        stserver: [
+            { from: 1, text: ['โอ๊ะ… บ้านหลังใหญ่ (เซิร์ฟเวอร์ ST) ไม่ตอบรับเราแล้วค่ะ ก๊อปข้อความที่พิมพ์ค้างไว้ก่อนนะคะ', 'สายใยระหว่างเรากับเซิร์ฟเวอร์ ST ขาดไปค่ะ บันทึกไม่ลง'] },
+            { from: 3, text: ['เซิร์ฟเวอร์ยังเงียบอยู่เลยค่ะ ({n} รอบแล้ว)… ลองไปดูหน้าต่าง terminal นะคะ'] },
+        ],
+        import: [
+            { from: 1, text: ['การ์ดใบนี้… ข้างในไม่มีวิญญาณของตัวละครเลยค่ะ', 'เวทมนตร์ของเราอ่านการ์ดใบนี้ไม่ออกค่ะ'] },
+        ],
+        blocked: [
+            { from: 1, text: ['มีบาปจะสารภาพไหมคะ', 'ป่าแห่งนี้ให้อภัยได้… แต่ตัวกรองเขาไม่ให้ผ่านค่ะ', 'คำขอนี้ถูกปิดกั้นไว้ค่ะ ลองถ้อยคำที่นุ่มนวลกว่านี้ดูไหมคะ'] },
+            { from: 3, text: ['สารภาพมา {n} รอบแล้วนะคะวันนี้… เราเริ่มเป็นห่วงแล้ว'] },
+        ],
+        prefill: [
+            { from: 1, text: ['คำพูดสุดท้ายเป็นของบอทเองค่ะ โมเดลนี้ไม่ยอมพูดต่อจากตัวเอง', 'ถึงตาเราพูดก่อนนะคะ ไม่ใช่ตาของบอท'] },
+            { from: 3, text: ['{n} รอบแล้วค่ะ ลองปิด prefill ดูก่อนไหมคะ'] },
+        ],
+        param: [
+            { from: 1, text: ['ค่าที่ตั้งไว้ โมเดลนี้ไม่รู้จักค่ะ ปรับนิดเดียวก็หายแล้ว', 'เหมือนร่ายคาถาผิดภาษาเลยค่ะ โมเดลนี้ไม่รับค่านี้'] },
+        ],
+        overloaded: [
+            { from: 1, text: ['เซิร์ฟเวอร์คนแน่นค่ะ… พักใต้ร่มไม้กับเราสักครู่นะคะ', 'ทั้งโลกแย่งกันใช้อยู่ค่ะ ใจเย็น ๆ นะคะ'] },
+            { from: 3, text: ['ออกไปแตะหญ้าเถอะค่ะ ป่าข้างนอกรออยู่นะ', 'ครั้งที่ {n} แล้วค่ะ… ดื่มชาสมุนไพรกับเราก่อนไหมคะ'] },
+            { from: 8, text: ['{n} ครั้งแล้ววันนี้… แม้แต่ต้นไม้ในป่ายังคิดถึงคุณเลยค่ะ'] },
+        ],
+        quota: [
+            { from: 1, text: ['พลังของวันนี้หมดแล้วค่ะ… โควตาไม่ให้ไปต่อ', 'ช้า ๆ หน่อยนะคะ เราตามไม่ทันแล้ว'] },
+            { from: 3, text: ['{n} ครั้งแล้วค่ะ… พักก่อนนะคะ เราเองก็เหนื่อยแล้ว'] },
+        ],
+        credits: [
+            { from: 1, text: ['เครดิตหมดแล้วค่ะ… เวทมนตร์รักษาของเราเสกเงินไม่ได้', 'ถุงเงินว่างเปล่าแล้วค่ะ ต้องเติมก่อนนะคะ'] },
+            { from: 3, text: ['เครดิตยังไม่กลับมาเลยค่ะ ({n} รอบแล้ว)'] },
+        ],
+        denied: [
+            { from: 1, text: ['ประตูบานนี้ถูกผนึกไว้แล้วค่ะ! โปรเจกต์นี้ถูกระงับสิทธิ์', 'เขาไม่ได้แค่ปิดประตูค่ะ… เขาผนึกไว้เลย'] },
+        ],
+        forbidden: [
+            { from: 1, text: ['ผู้เฝ้าประตูไม่ให้เราผ่านค่ะ', 'ม่านเวทกั้นทางไว้ค่ะ บัตรผ่านของเราใช้ไม่ได้'] },
+            { from: 3, text: ['ถูกปฏิเสธมา {n} รอบแล้วค่ะ ลองเช็กรหัสผ่านของ proxy ดูนะคะ'] },
+        ],
+        key: [
+            { from: 1, text: ['กุญแจดอกนี้ไขประตูไม่ได้ค่ะ', 'key นี้เขาไม่รับค่ะ ลองดูอีกทีนะคะ'] },
+            { from: 3, text: ['ลองกุญแจดอกเดิมมา {n} รอบแล้วนะคะ…'] },
+        ],
+        location: [
+            { from: 1, text: ['เขาบอกว่าดินแดนของเรายังไม่เปิดให้บริการค่ะ', 'เส้นทางจากที่นี่ไปไม่ถึงค่ะ ประเทศนี้ยังไม่รองรับ'] },
+        ],
+        context: [
+            { from: 1, text: ['เรื่องราวยาวเกินกว่าความทรงจำจะจุได้แล้วค่ะ', 'เยอะเกินไปค่ะ… หัวเราจะหมุนแล้ว'] },
+        ],
+        empty: [
+            { from: 1, text: ['เขาตอบกลับมา… ว่างเปล่าค่ะ', 'มีแต่ความเงียบกลับมาค่ะ เหมือนลมพัดผ่าน'] },
+            { from: 3, text: ['ว่างเปล่ามา {n} รอบแล้วค่ะ… เขาโกรธอะไรเราหรือเปล่านะ'] },
+        ],
+        model: [
+            { from: 1, text: ['หาโมเดลนี้ไม่เจอค่ะ เหมือนหายไปในหมอก', 'โมเดลนี้อาจย้ายไปอยู่ป่าอื่นแล้วค่ะ'] },
+        ],
+        network: [
+            { from: 1, text: ['สายใยขาดค่ะ! ติดต่อไม่ได้เลย', 'เน็ตหายไปไหนแล้วคะ!'] },
+            { from: 3, text: ['ยังติดต่อไม่ได้อีกแล้วค่ะ ({n} รอบ)… เราเริ่มกังวลแล้ว'] },
+        ],
+        noreply: [
+            { from: 1, text: ['ส่งไปแล้ว… แต่ไม่มีเสียงตอบกลับมาเลยค่ะ', 'เรารอฟังแล้วค่ะ แต่ไม่มีคำตอบ'] },
+        ],
+        server: [
+            { from: 1, text: ['ฝั่งเขาพังค่ะ! ไม่ใช่ความผิดของคุณนะคะ', 'เกิดอะไรขึ้นที่โน่นคะ… เซิร์ฟเวอร์เขาล้ม'] },
+            { from: 3, text: ['พังมา {n} รอบแล้วค่ะ… พักก่อนนะคะ'] },
+        ],
+        unknown: [
+            { from: 1, text: ['อันนี้เราก็ไม่รู้จักค่ะ…', 'error หน้าใหม่ค่ะ ต้องอ่านข้อความต้นฉบับกันแล้ว'] },
+        ],
+    },
+};
+
+/**
+ * Lines for "the character in this chat": told about them ({name}), so they fit
+ * anyone whatever their voice, pronouns or language.
+ */
+export const CHARACTER_LINES = {
+    stserver: [
+        { from: 1, text: ['{name} เบิกตากว้าง: เซิร์ฟเวอร์ ST ไม่ตอบแล้ว บันทึกไม่ลง', '{name} รีบบอกให้ก๊อปข้อความที่พิมพ์ค้างไว้ก่อน เซิร์ฟเวอร์ ST หายเงียบ'] },
+        { from: 3, text: ['{name} ชี้ไปที่หน้าต่าง terminal ({n} รอบแล้ว)'] },
+    ],
+    import: [{ from: 1, text: ['{name} พลิกการ์ดใบนี้ไปมา… อ่านไม่ออกเลย'] }],
+    blocked: [
+        { from: 1, text: ['{name} เบือนหน้าหนีอย่างเขิน ๆ: ตัวกรองไม่ให้ผ่าน', 'มีบาปจะสารภาพกับ {name} ไหม'] },
+        { from: 3, text: ['{name} มองหน้าเรานิ่ง ๆ… โดนบล็อกมา {n} รอบแล้ววันนี้'] },
+    ],
+    prefill: [{ from: 1, text: ['{name} งง: ข้อความสุดท้ายเป็นของบอทเอง โมเดลนี้ไม่ยอมตอบต่อ'] }],
+    param: [{ from: 1, text: ['{name} เอียงคอ: ค่าที่ตั้งไว้ โมเดลนี้ไม่รับ'] }],
+    overloaded: [
+        { from: 1, text: ['{name} ถอนหายใจ: เซิร์ฟเวอร์คนแน่น ต้องรอคิว', '{name} นั่งรอเงียบ ๆ… ทั้งโลกแย่งกันใช้อยู่'] },
+        { from: 3, text: ['{name} ชี้ออกไปข้างนอก: ไปแตะหญ้าก่อนไหม', '{name} เริ่มหงุดหงิด… ครั้งที่ {n} แล้ว'] },
+    ],
+    quota: [
+        { from: 1, text: ['{name} หมดแรงแล้ว: โควตาไม่ให้ไปต่อ', '{name} ขอให้ช้าลงหน่อย ส่งถี่เกินไป'] },
+        { from: 3, text: ['{name} ฟุบลงกับโต๊ะ… {n} ครั้งแล้ว'] },
+    ],
+    credits: [{ from: 1, text: ['{name} เปิดกระเป๋าตังค์ให้ดู… ว่างเปล่า เครดิตหมด'] }],
+    denied: [{ from: 1, text: ['{name} ตกใจ: โปรเจกต์นี้ถูกระงับสิทธิ์แล้ว'] }],
+    forbidden: [
+        { from: 1, text: ['{name} โดนยามหน้าประตูไล่กลับมา: ไม่ให้เข้า'] },
+        { from: 3, text: ['{name} ถูกไล่มา {n} รอบแล้ว… ลองเช็กรหัสผ่านของ proxy ดู'] },
+    ],
+    key: [{ from: 1, text: ['{name} ส่ายหน้า: กุญแจ (API key) ดอกนี้ไขไม่เข้า'] }],
+    location: [{ from: 1, text: ['{name} กางแผนที่ดู: แถวนี้ยังไม่เปิดให้บริการ'] }],
+    context: [{ from: 1, text: ['{name} กุมขมับ: ยาวเกินกว่าจะจำไหวแล้ว'] }],
+    empty: [
+        { from: 1, text: ['{name} รอคำตอบ… แต่ได้ความว่างเปล่ากลับมา'] },
+        { from: 3, text: ['{name} เริ่มสงสัยว่าเขางอนอะไร… ว่างเปล่ามา {n} รอบแล้ว'] },
+    ],
+    model: [{ from: 1, text: ['{name} มองหาโมเดลนี้ทั่วแล้ว… ไม่เจอ'] }],
+    network: [
+        { from: 1, text: ['{name} สะดุ้ง: สายหลุด ติดต่อไม่ได้เลย'] },
+        { from: 3, text: ['{name} เริ่มใจไม่ดี… ต่อไม่ติดมา {n} รอบแล้ว'] },
+    ],
+    noreply: [{ from: 1, text: ['{name} รอฟังแล้ว… แต่ไม่มีเสียงตอบกลับ'] }],
+    server: [
+        { from: 1, text: ['{name} หันไปมอง: ฝั่งเขาพัง ไม่ใช่ความผิดเรา'] },
+        { from: 3, text: ['{name} ส่ายหัว… พังมา {n} รอบแล้ว'] },
+    ],
+    unknown: [{ from: 1, text: ['{name} ก็ไม่รู้จัก error นี้เหมือนกัน… ต้องอ่านข้อความต้นฉบับ'] }],
+};
