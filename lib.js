@@ -35,17 +35,22 @@ export function matchRule(message, title, { unknown = true, rules = RULES } = {}
 }
 
 /**
- * A line for the n-th time this error was seen today.
- * @param {{ from: number, text: string[] }[]} tiers a rule's lines, or a companion's for that rule
+ * A line for the n-th time this error was seen today, and the picture chosen for that line.
+ * @param {{ from: number, text: string[], images?: string[] }[]} tiers a rule's lines, or a companion's for that rule
  * @param {number} count 1 for the first time
  * @param {() => number} [random]
+ * @returns {{ text: string, img: string }} img = image id ('' = the error's own picture)
  */
-export function pickLine(tiers, count, random = Math.random) {
+export function pickEntry(tiers, count, random = Math.random) {
     const reached = tiers.filter(t => t.from <= Math.max(1, count));
     const tier = reached.length ? reached[reached.length - 1] : tiers[0];
-    const text = tier.text[Math.floor(random() * tier.text.length)] ?? tier.text[0];
-    return text.replaceAll('{n}', String(count));
+    let i = Math.floor(random() * tier.text.length);
+    if (!(i in tier.text)) i = 0;
+    return { text: tier.text[i].replaceAll('{n}', String(count)), img: tier.images?.[i] ?? '' };
 }
+
+/** Just the line of pickEntry. */
+export const pickLine = (tiers, count, random = Math.random) => pickEntry(tiers, count, random).text;
 
 /** Local calendar day, for "seen today" counts. */
 export function dayKey(date = new Date()) {
@@ -133,27 +138,42 @@ const MAX_IMAGE_NAME = 30;
 
 const badUrl = what => new Error(`${what}: ใช้ได้แค่ลิงก์ https:// หรือที่อยู่ไฟล์ในเซิร์ฟเวอร์ SillyTavern`);
 
-/** "[{from, text}]", a plain list of sentences, or editor text → tiers (capped). */
-function cleanTiers(value) {
-    let tiers;
+/**
+ * "[{from, text, images}]", a plain list of sentences, or editor text → tiers (capped,
+ * one tier per `from`, sorted). `images` (the picture for each sentence, parallel to
+ * `text`) goes through keepImage, which returns '' for an image that doesn't exist;
+ * a tier only keeps `images` when one of its sentences has a picture of its own.
+ */
+function cleanTiers(value, keepImage = () => '') {
+    const byFrom = new Map();
+    const add = (from, text, img) => {
+        text = typeof text === 'string' ? text.trim().slice(0, MAX_LINE) : '';
+        if (!text) return;
+        if (!byFrom.has(from)) byFrom.set(from, { from, text: [], images: [] });
+        byFrom.get(from).text.push(text);
+        byFrom.get(from).images.push(typeof img === 'string' && img ? keepImage(img) : '');
+    };
+    const addParsed = str => { for (const t of parseLines(str)) for (const x of t.text) add(t.from, x, ''); };
     if (typeof value === 'string') {
-        tiers = parseLines(value);
+        addParsed(value);
     } else if (Array.isArray(value)) {
-        const text = value.flatMap(t => {
-            if (typeof t === 'string') return [t];
-            if (!t || !Array.isArray(t.text)) return [];
-            const from = Number.isFinite(Number(t.from)) ? Math.max(1, Math.floor(Number(t.from))) : 1;
-            return t.text.filter(x => typeof x === 'string').map(x => (from > 1 ? `[${from}] ${x}` : x));
-        });
-        tiers = parseLines(text.join('\n'));
+        for (const t of value) {
+            if (typeof t === 'string') { addParsed(t); continue; }
+            if (!t || !Array.isArray(t.text)) continue;
+            const from = Number.isFinite(Number(t.from)) ? Math.min(9999, Math.max(1, Math.floor(Number(t.from)))) : 1;
+            t.text.forEach((x, i) => add(from, x, Array.isArray(t.images) ? t.images[i] : ''));
+        }
     } else {
         return [];
     }
     let left = MAX_LINES;
-    return tiers.map(t => {
-        const text = t.text.slice(0, Math.max(0, left));
-        left -= text.length;
-        return { from: t.from, text };
+    return [...byFrom.values()].sort((a, b) => a.from - b.from).map(t => {
+        const n = Math.min(t.text.length, Math.max(0, left));
+        left -= n;
+        const out = { from: t.from, text: t.text.slice(0, n) };
+        const images = t.images.slice(0, n);
+        if (images.some(Boolean)) out.images = images;
+        return out;
     }).filter(t => t.text.length);
 }
 
@@ -162,14 +182,15 @@ function cleanTiers(value) {
  * Unknown keys and unknown error ids are dropped; bad values throw with a message for the user.
  *
  * Shape: any number of named images, and per error which image to show
- * (`errorImages`, missing = the first image) and its own lines (missing = Tawan's).
+ * (`errorImages`, missing = the first image) and its own lines (missing = Tawan's),
+ * each line maybe with a picture of its own (`images` beside `text` in its tier).
  * Version-1 files had six fixed slots (`sprites: { neutral, tired, … }`); those
  * become images named after the slot, used by the errors that slot was for.
  *
  * @param {any} raw
  * @param {{ id: string, mood: string }[]} [rules] errors that may have images / lines
  * @returns {{ name: string, color: string, images: { id: string, name: string, url: string }[],
- *   errorImages: Record<string, string>, lines: Record<string, { from: number, text: string[] }[]>,
+ *   errorImages: Record<string, string>, lines: Record<string, { from: number, text: string[], images?: string[] }[]>,
  *   crop: { x: number, y: number, size: number }, icon?: string }}
  */
 export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
@@ -182,6 +203,7 @@ export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
     const images = [];
     const errorImages = {};
     const ids = new Set();
+    const renamed = new Map(); // id in the file → id kept
     const addImage = (id, imgName, url, extra = {}) => {
         if (images.length >= MAX_IMAGES) return null;
         url = typeof url === 'string' ? url.trim() : '';
@@ -200,7 +222,6 @@ export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
     };
 
     if (Array.isArray(raw.images)) {
-        const renamed = new Map(); // id in the file → id kept
         for (const img of raw.images) {
             if (!img || typeof img !== 'object') continue;
             const kept = addImage(img.id, img.name, img.url, img);
@@ -223,7 +244,7 @@ export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
     const lines = {};
     const rawLines = raw.lines && typeof raw.lines === 'object' ? raw.lines : {};
     for (const rule of rules) {
-        const tiers = cleanTiers(rawLines[rule.id]);
+        const tiers = cleanTiers(rawLines[rule.id], id => renamed.get(id) ?? '');
         if (tiers.length) lines[rule.id] = tiers;
     }
 
@@ -250,11 +271,6 @@ export function sanitizeCrop(raw) {
 }
 
 /**
- * Where to put an image of natW × natH inside a circle of diameter d so that
- * crop.x / crop.y sits at the centre and crop.size of the image width spans the circle.
- * @returns {{ width: number, left: number, top: number }} px, for an absolutely placed <img>
- */
-/**
  * Where an image stands in the full pop-up, set by the user per screen shape:
  * tall (portrait, phones) and wide (landscape, computers). Each is x = the
  * picture's centre and y = its bottom edge, as shares of the screen width and
@@ -280,6 +296,11 @@ export function sanitizePlace(raw) {
 /** Screen shapes a placement is saved for. */
 export const LAYOUTS = ['tall', 'wide'];
 
+/**
+ * Where to put an image of natW × natH inside a circle of diameter d so that
+ * crop.x / crop.y sits at the centre and crop.size of the image width spans the circle.
+ * @returns {{ width: number, left: number, top: number }} px, for an absolutely placed <img>
+ */
 export function cropBox(crop, natW, natH, d) {
     const width = d / crop.size;
     const height = natW ? width * (natH / natW) : width;
