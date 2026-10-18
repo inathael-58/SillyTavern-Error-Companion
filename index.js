@@ -20,14 +20,14 @@
 import { BUILTIN_COMPANIONS, CHARACTER_LINES, EXPRESSION_FOR, SERAPHINA } from './companions.js';
 import { RULES, UNKNOWN } from './errors.js';
 import {
-    COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, MAX_DATA_URL, MOODS,
+    COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, LAYOUTS, MAX_DATA_URL, MOODS,
     cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, pickLine, plainText,
-    sanitizeCompanion, sanitizeCrop,
+    sanitizeCompanion, sanitizeCrop, sanitizePlace,
 } from './lib.js';
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.5.1'; // keep in sync with manifest.json
+const VERSION = '0.6.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
@@ -179,7 +179,7 @@ function imageFor(comp, rule) {
     const images = comp.images ?? [];
     if (!images.length) return { url: builtinSprite(rule.mood), builtin: true };
     const img = images.find(i => i.id === comp.errorImages?.[rule.id]) ?? images[0];
-    return { url: img.url, builtin: false, crop: img.crop };
+    return { url: img.url, builtin: false, crop: img.crop, place: img.place };
 }
 
 /**
@@ -390,8 +390,14 @@ function buildRoot() {
             </div>
         </div>`;
     document.body.append(root);
+    buildPlaceBar();
+    // SillyTavern closes its open panels on a press outside them; while placing,
+    // the editor panel must stay open behind the pop-up
+    for (const type of ['mousedown', 'touchstart']) {
+        root.addEventListener(type, e => { if (placing) e.stopPropagation(); });
+    }
 
-    root.querySelector('.ec_backdrop').addEventListener('click', closeFull);
+    root.querySelector('.ec_backdrop').addEventListener('click', () => { if (!placing) closeFull(); });
     root.querySelector('.ec_close').addEventListener('click', closeFull);
     root.querySelector('.ec_say').addEventListener('click', finishTyping);
     root.querySelector('.ec_ok').addEventListener('click', closeFull);
@@ -424,7 +430,9 @@ function openFull() {
     if (!root) buildRoot();
     closeMini();
     const { rule, raw, line, comp } = current;
-    setSprite(root.querySelector('.ec_sprite'), imageFor(comp, rule).url);
+    const pic = imageFor(comp, rule);
+    current.place = pic.place;
+    setSprite(root.querySelector('.ec_sprite'), pic.url);
     applyColors(root, comp);
     root.dataset.mood = rule.mood;
     root.querySelector('#ec_name').textContent = comp.name;
@@ -439,8 +447,37 @@ function openFull() {
     void root.offsetWidth; // restart the entrance animation
     root.classList.add('ec_in');
     root.querySelector('.ec_detail').scrollTop = 0;
+    placeSprite(current.place?.[layoutKey()]);
     typeLine(line);
 }
+
+/** The screen shape a placement is saved for: tall (portrait, phones) or wide. */
+const layoutKey = () => (innerWidth >= innerHeight ? 'wide' : 'tall');
+const LAYOUT_NAMES = { tall: 'จอแนวตั้ง (มือถือ)', wide: 'จอแนวนอน (คอม / แท็บเล็ต)' };
+
+/**
+ * Put the sprite where the user placed it for this screen shape: p.x = centre
+ * and p.y = bottom edge as shares of the screen, p.h = height as a share of
+ * the screen height. No placement = the default spot, standing on the box.
+ */
+function placeSprite(p) {
+    const sprite = /** @type {HTMLElement} */ (root.querySelector('.ec_sprite'));
+    root.classList.toggle('ec_placed', !!p);
+    if (!p) {
+        sprite.style.left = sprite.style.bottom = sprite.style.height = '';
+        return;
+    }
+    // the sprite lives in the stage (centred, maybe narrower than the screen)
+    const stage = root.querySelector('.ec_stage').getBoundingClientRect();
+    sprite.style.left = `${p.x * innerWidth - stage.left}px`;
+    sprite.style.bottom = `${stage.bottom - p.y * innerHeight}px`;
+    sprite.style.height = `${p.h * innerHeight}px`;
+}
+
+addEventListener('resize', () => {
+    if (!root || root.hidden || !current) return;
+    placeSprite(placing ? placing.p : current.place?.[layoutKey()]);
+});
 
 function typeLine(text) {
     clearInterval(typing);
@@ -470,6 +507,10 @@ function finishTyping() {
 
 function closeFull() {
     if (!root || root.hidden) return;
+    if (placing) {
+        placing = null;
+        root.classList.remove('ec_placing');
+    }
     clearInterval(typing);
     root.hidden = true;
     current = null;
@@ -697,7 +738,7 @@ function bindCompanionControls() {
         if (!isBuiltin(comp)) return openEditor(comp);
         // built-in companions can't be edited: start a new one from a copy
         const lines = Object.fromEntries(ALL_RULES.map(r => [r.id, structuredClone(linesFor(comp, r))]));
-        const images = comp.images.map(({ id, name, url }) => ({ id, name, url }));
+        const images = comp.images.map(({ id, name, url, crop }) => ({ id, name, url, crop }));
         openEditor(null, { name: `${comp.name} (สำเนา)`, color: comp.color, images, errorImages: { ...comp.errorImages }, crop: comp.crop, lines });
     });
     $id('ec_comp_del').addEventListener('click', async () => {
@@ -792,18 +833,19 @@ function openEditor(comp, start) {
             </div>
 
             <div class="ec_set_title">รูป</div>
-            <small class="ec_note">เพิ่มได้หลายรูป ตั้งชื่อให้จำง่าย แล้วเลือกใน error แต่ละแบบด้านล่างว่าจะใช้รูปไหน · error ที่ไม่ได้เลือกใช้รูปแรก · ไม่มีรูปเลย = ใช้รูปของตะวัน · ภาพครึ่งตัว พื้นหลังโปร่งใส ขอบล่างตัดตรง จะดูดีที่สุด · กด 📁 เพื่อเลือกรูปจากเครื่อง (รูปจะติดไปกับไฟล์ที่ส่งออก แชร์ให้เพื่อนได้เลย) หรือวางลิงก์รูปที่เปิดได้จากทุกเครื่อง</small>
+            <small class="ec_note">เพิ่มได้หลายรูป ตั้งชื่อให้จำง่าย แล้วเลือกใน error แต่ละแบบด้านล่างว่าจะใช้รูปไหน · error ที่ไม่ได้เลือกใช้รูปแรก · ไม่มีรูปเลย = ใช้รูปของตะวัน · รูปท่าไหนก็ได้ ครึ่งตัว เต็มตัว หรือลอยกลางอากาศ แล้วกด <b>จัดตำแหน่งบนจอ</b> เพื่อวางเอง · แนะนำ PNG หรือ WebP พื้นหลังโปร่งใส สูงอย่างน้อย 600 px ไม่เกิน 1.5 MB ต่อรูป · กด 📁 เพื่อเลือกรูปจากเครื่อง (ย่อให้เอง และติดไปกับไฟล์ที่ส่งออก) หรือวางลิงก์รูปที่เปิดได้จากทุกเครื่อง</small>
             <div id="ec_ed_images" class="ec_ed_images"></div>
             <div class="ec_btns"><div id="ec_ed_addimg" class="menu_button"><i class="fa-solid fa-plus"></i> เพิ่มรูป</div></div>
 
             <div class="ec_set_title">ไอคอนในแบบมินิ</div>
-            <small class="ec_note">เลื่อนให้หน้าอยู่กลางวง · ใช้ตำแหน่งเดียวกันทุกรูป ดูให้ครบทุกวง</small>
+            <small class="ec_note">แตะวงที่จะปรับ แล้วเลื่อนแถบให้หน้าอยู่กลางวง · แต่ละรูปตั้งได้ไม่เหมือนกัน</small>
             <div id="ec_ed_faces" class="ec_ed_faces"></div>
             <div class="ec_ed_sliders">
                 <label>ซ้าย ↔ ขวา <input type="range" id="ec_ed_cx" min="0" max="100" step="1"></label>
                 <label>ขึ้น ↕ ลง <input type="range" id="ec_ed_cy" min="0" max="100" step="1"></label>
                 <label>ซูม <input type="range" id="ec_ed_cz" min="0" max="90" step="1"></label>
                 <div id="ec_ed_crop_reset" class="menu_button" title="ตำแหน่งเริ่มต้น"><i class="fa-solid fa-rotate-left"></i></div>
+                <div id="ec_ed_crop_all" class="menu_button" title="ใช้ตำแหน่งนี้กับทุกรูป"><i class="fa-solid fa-clone"></i> ใช้กับทุกรูป</div>
             </div>
             <small id="ec_ed_cropnote" class="ec_note"></small>
             <label class="ec_field">หรือใช้รูปไอคอนแยก <small class="ec_note ec_inline">(ไม่บังคับ · รูปหน้าตรง ๆ จะเต็มวงพอดี)</small>
@@ -829,7 +871,9 @@ function openEditor(comp, start) {
     /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value = c.name ?? '';
     /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value = c.color || DEFAULT_COLOR;
     /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value = c.icon ?? '';
-    for (const img of c.images ?? []) addImageRow(box, img);
+    const startCrop = c.crop ? sanitizeCrop(c.crop) : undefined; // older files: one crop for every image
+    for (const img of c.images ?? []) addImageRow(box, { ...img, crop: img.crop ?? startCrop });
+    box.dataset.face = c.images?.[0]?.id ?? '';
     refreshPicks(box);
     for (const det of box.querySelectorAll('.ec_ed_rule')) {
         const id = /** @type {HTMLElement} */ (det).dataset.rule;
@@ -842,27 +886,51 @@ function openEditor(comp, start) {
         /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cy')).value = String(Math.round(k.y * 100));
         /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cz')).value = String(Math.round((1 - k.size) * 100));
     };
-    setCropInputs(sanitizeCrop(c.crop));
+    const faceRow = () => /** @type {HTMLElement} */ (box.querySelector(`.ec_ed_img[data-img="${CSS.escape(box.dataset.face ?? '')}"]`) ?? box.querySelector('.ec_ed_img'));
+    const showFace = () => setCropInputs(rowJson(faceRow(), 'crop') ?? DEFAULT_CROP);
+    showFace();
     updatePreview();
 
     box.oninput = e => {
         const t = /** @type {HTMLElement} */ (e.target);
+        if (t.closest('.ec_ed_sliders') && faceRow()) setRowJson(faceRow(), 'crop', editorCrop(box));
         if (t.closest('.ec_ed_img')) refreshPicks(box);
         if (t.closest('.ec_ed_rule')) markRule(t.closest('.ec_ed_rule'));
         updatePreview();
     };
     box.onchange = box.oninput;
     box.querySelector('#ec_ed_addimg').addEventListener('click', () => {
-        const row = addImageRow(box, { id: '', name: '', url: '' });
+        const row = addImageRow(box, { id: '', name: '', url: '', crop: faceRow() ? editorCrop(box) : undefined });
+        if (!box.dataset.face) box.dataset.face = row.dataset.img;
         refreshPicks(box);
         updatePreview();
         row.querySelector('.ec_ed_imgname').focus();
     });
     box.querySelector('#ec_ed_images').addEventListener('click', e => {
-        const row = /** @type {HTMLElement} */ (e.target).closest('.ec_ed_delimg')?.closest('.ec_ed_img');
+        const t = /** @type {HTMLElement} */ (e.target);
+        const placeRow = t.closest('.ec_ed_place')?.closest('.ec_ed_img');
+        if (placeRow) return startPlacing(box, /** @type {HTMLElement} */ (placeRow));
+        const row = t.closest('.ec_ed_delimg')?.closest('.ec_ed_img');
         if (!row) return;
         row.remove();
+        if (box.dataset.face === /** @type {HTMLElement} */ (row).dataset.img) {
+            box.dataset.face = /** @type {HTMLElement} */ (box.querySelector('.ec_ed_img'))?.dataset.img ?? '';
+            showFace();
+        }
         refreshPicks(box);
+        updatePreview();
+    });
+    // pointerdown, not click: the field losing focus redraws the circles before a click lands
+    box.querySelector('#ec_ed_faces').addEventListener('pointerdown', e => {
+        const id = /** @type {HTMLElement} */ (e.target).closest('[data-img]')?.dataset.img;
+        if (!id) return;
+        box.dataset.face = id;
+        showFace();
+        updatePreview();
+    });
+    box.querySelector('#ec_ed_crop_all').addEventListener('click', () => {
+        const crop = editorCrop(box);
+        for (const row of box.querySelectorAll('.ec_ed_img')) setRowJson(/** @type {HTMLElement} */ (row), 'crop', crop);
         updatePreview();
     });
     box.querySelector('#ec_ed_images').addEventListener('change', async e => {
@@ -880,7 +948,11 @@ function openEditor(comp, start) {
         refreshPicks(box);
         updatePreview();
     });
-    box.querySelector('#ec_ed_crop_reset').addEventListener('click', () => { setCropInputs(DEFAULT_CROP); updatePreview(); });
+    box.querySelector('#ec_ed_crop_reset').addEventListener('click', () => {
+        setCropInputs(DEFAULT_CROP);
+        if (faceRow()) setRowJson(faceRow(), 'crop', editorCrop(box));
+        updatePreview();
+    });
     box.querySelector('#ec_ed_save').addEventListener('click', saveEditor);
     box.querySelector('#ec_ed_try').addEventListener('click', () => {
         const comp = readEditor();
@@ -913,17 +985,150 @@ function addImageRow(box, img) {
                 <input type="url" class="text_pole ec_ed_url" placeholder="https://… หรือกด 📁" autocomplete="off" spellcheck="false">
                 <label class="menu_button ec_ed_pickfile" title="เลือกรูปจากเครื่อง (รูปจะติดไปกับไฟล์ที่ส่งออกด้วย)"><i class="fa-solid fa-folder-open"></i><input type="file" accept="image/*" hidden></label>
             </div>
+            <div class="ec_ed_placerow">
+                <div class="menu_button ec_ed_place" title="ลากรูปไปวางและปรับขนาดบนจอจริง"><i class="fa-solid fa-up-down-left-right"></i> จัดตำแหน่งบนจอ</div>
+                <small class="ec_ed_placed"></small>
+            </div>
         </div>
         <div class="menu_button ec_ed_delimg" title="ลบรูปนี้"><i class="fa-solid fa-trash"></i></div>`;
     /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value = img.name ?? '';
     /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value = img.url ?? '';
+    setRowJson(row, 'crop', img.crop ? sanitizeCrop(img.crop) : null);
+    setRowJson(row, 'place', sanitizePlace(img.place));
+    markPlaced(row);
     list.append(row);
     return row;
 }
 
+/** Per-image settings kept on the image's row in the editor (as JSON in a data attribute). */
+function rowJson(row, key) {
+    try {
+        return row ? JSON.parse(row.dataset[key] || 'null') : null;
+    } catch {
+        return null;
+    }
+}
+
+function setRowJson(row, key, value) {
+    if (value) row.dataset[key] = JSON.stringify(value);
+    else delete row.dataset[key];
+}
+
+/** Which screen shapes this image has been placed for. */
+function markPlaced(row) {
+    const place = rowJson(row, 'place') ?? {};
+    const done = LAYOUTS.filter(k => place[k]).map(k => LAYOUT_SHORT[k]);
+    row.querySelector('.ec_ed_placed').textContent = done.length ? `✓ ${done.join(' · ')}` : 'ยังใช้ตำแหน่งเดิม (ยืนบนกล่องข้อความ)';
+}
+
+// ---------------------------------------------------------------- placing an image on the screen
+
+const LAYOUT_SHORT = { tall: 'จอแนวตั้ง', wide: 'จอแนวนอน' };
+
+/** While the user drags an image around the real pop-up: { box, row, layout, p, drag } */
+let placing = null;
+
+async function startPlacing(box, row) {
+    const preview = editorPreview(box);
+    const img = preview.images.find(i => i.id === row.dataset.img);
+    if (!img) return notify('warning', 'ใส่รูปก่อน แล้วค่อยจัดตำแหน่ง');
+    const layout = layoutKey();
+    const saved = rowJson(row, 'place') ?? {};
+    const name = /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value.trim() || 'ตัวอย่าง';
+    const color = /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value;
+    const comp = { id: 'preview', name, color, images: [{ ...img, place: undefined }], errorImages: {}, lines: {} };
+    const rule = ruleById('overloaded');
+    closeFull();
+    closeMini();
+    current = { rule, raw: rule.sample, count: 1, comp, hits: 1, line: 'ลากรูปไปวางตรงไหนก็ได้ แล้วปรับขนาดด้วยแถบด้านบน' };
+    openFull();
+    placing = { box, row, layout, p: saved[layout] ? { ...saved[layout] } : null, drag: null };
+    root.classList.add('ec_placing');
+    root.querySelector('.ec_placebar_layout').textContent = LAYOUT_NAMES[layout];
+    const sprite = /** @type {HTMLImageElement} */ (root.querySelector('.ec_sprite'));
+    try { await sprite.decode(); } catch { /* shown broken; still placeable */ }
+    await new Promise(r => setTimeout(r, 450)); // let the entrance hop finish before measuring
+    if (!placing) return;
+    if (!placing.p) {
+        // start from where it stands now
+        const r = sprite.getBoundingClientRect();
+        placing.p = { x: (r.left + r.width / 2) / innerWidth, y: r.bottom / innerHeight, h: r.height / innerHeight };
+    }
+    placeSprite(placing.p);
+    syncPlaceBar();
+}
+
+function syncPlaceBar() {
+    if (!placing?.p) return;
+    /** @type {HTMLInputElement} */ (root.querySelector('.ec_place_size')).value = String(Math.round(placing.p.h * 100));
+}
+
+/** Keep the result on the image's row; null = back to the default spot for this screen shape. */
+function endPlacing(keep) {
+    if (!placing) return;
+    const { row, layout, p } = placing;
+    if (keep !== undefined) {
+        const saved = rowJson(row, 'place') ?? {};
+        if (keep && p) saved[layout] = sanitizePlace({ [layout]: p })?.[layout];
+        else delete saved[layout];
+        setRowJson(row, 'place', sanitizePlace(saved));
+        markPlaced(row);
+    }
+    closeFull();
+}
+
+function buildPlaceBar() {
+    const bar = document.createElement('div');
+    bar.className = 'ec_placebar';
+    bar.innerHTML = `
+        <div class="ec_placebar_title">จัดตำแหน่ง · <span class="ec_placebar_layout"></span></div>
+        <small>ลากรูปเพื่อย้าย · บันทึกแยกสำหรับจอแนวนี้ (จอแนวตั้งกับแนวนอนตั้งไม่เหมือนกันได้)</small>
+        <label class="ec_place_sizerow">ขนาด <input type="range" class="ec_place_size" min="5" max="150" step="1"></label>
+        <div class="ec_btns">
+            <div class="menu_button ec_place_save"><i class="fa-solid fa-check"></i> บันทึก</div>
+            <div class="menu_button ec_place_clear" title="กลับไปยืนบนกล่องข้อความ"><i class="fa-solid fa-rotate-left"></i> ค่าเดิม</div>
+            <div class="menu_button ec_place_cancel"><i class="fa-solid fa-xmark"></i> ยกเลิก</div>
+        </div>`;
+    root.append(bar);
+    bar.querySelector('.ec_place_size').addEventListener('input', e => {
+        if (!placing?.p) return;
+        placing.p.h = Number(/** @type {HTMLInputElement} */ (e.target).value) / 100;
+        placeSprite(placing.p);
+    });
+    bar.querySelector('.ec_place_save').addEventListener('click', () => endPlacing(true));
+    bar.querySelector('.ec_place_clear').addEventListener('click', () => endPlacing(false));
+    bar.querySelector('.ec_place_cancel').addEventListener('click', () => endPlacing());
+
+    const sprite = /** @type {HTMLElement} */ (root.querySelector('.ec_sprite'));
+    sprite.addEventListener('pointerdown', e => {
+        if (!placing?.p) return;
+        e.preventDefault();
+        sprite.setPointerCapture(e.pointerId);
+        placing.drag = { x: e.clientX, y: e.clientY, from: { ...placing.p } };
+    });
+    sprite.addEventListener('pointermove', e => {
+        const d = placing?.drag;
+        if (!d) return;
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+        placing.p.x = clamp(d.from.x + (e.clientX - d.x) / innerWidth, 0, 1);
+        placing.p.y = clamp(d.from.y + (e.clientY - d.y) / innerHeight, 0, 1.5);
+        placeSprite(placing.p);
+    });
+    const drop = () => { if (placing) placing.drag = null; };
+    sprite.addEventListener('pointerup', drop);
+    sprite.addEventListener('pointercancel', drop);
+    sprite.addEventListener('wheel', e => {
+        if (!placing?.p) return;
+        e.preventDefault();
+        placing.p.h = Math.min(1.5, Math.max(0.05, placing.p.h * (e.deltaY < 0 ? 1.05 : 1 / 1.05)));
+        placeSprite(placing.p);
+        syncPlaceBar();
+    }, { passive: false });
+}
+
 /**
  * A picture from the user's device as a data:image URL that travels inside the
- * companion (settings and exported file): at most 720 px tall, WebP when the
+ * companion (settings and exported file): at most 1000 px each way, WebP when the
  * browser can make it, made smaller until it fits the size limit.
  * @returns {Promise<string>} '' if it can't be read
  */
@@ -934,7 +1139,7 @@ async function imageFileToDataUrl(file) {
     } catch {
         return '';
     }
-    let scale = Math.min(1, 720 / bitmap.height, 1000 / bitmap.width);
+    let scale = Math.min(1, 1000 / bitmap.height, 1000 / bitmap.width);
     for (let tries = 0; tries < 6; tries++, scale *= 0.8) {
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -987,14 +1192,14 @@ function editorPreview(box) {
         const name = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value.trim();
         setSprite(row.querySelector('.ec_ed_thumb'), url || builtinSprite('neutral'));
         row.querySelector('.ec_ed_thumb').classList.toggle('ec_placeholder', !url);
-        if (url) images.push({ id: /** @type {HTMLElement} */ (row).dataset.img, name, url });
+        if (url) images.push({ id: /** @type {HTMLElement} */ (row).dataset.img, name, url, crop: rowJson(row, 'crop') ?? undefined, place: rowJson(row, 'place') ?? undefined });
     }
     const errorImages = {};
     for (const det of box.querySelectorAll('.ec_ed_rule')) {
         const pick = /** @type {HTMLSelectElement} */ (det.querySelector('.ec_ed_pick')).value;
         if (pick) errorImages[/** @type {HTMLElement} */ (det).dataset.rule] = pick;
     }
-    return { images, errorImages, icon: usable(box.querySelector('#ec_ed_icon')), crop: editorCrop(box) };
+    return { images, errorImages, icon: usable(box.querySelector('#ec_ed_icon')), crop: images[0]?.crop ?? DEFAULT_CROP };
 }
 
 /** Thumbnails and round icons show what each error will use, including the fallbacks. */
@@ -1006,13 +1211,15 @@ function updatePreview() {
     // one round icon per image (or the icon image / Tawan when there are none of their own)
     const faces = box.querySelector('#ec_ed_faces');
     const icons = preview.icon ? [{ title: 'รูปไอคอนแยก', icon: { url: preview.icon, crop: null } }]
-        : preview.images.length ? preview.images.map(img => ({ title: img.name, icon: { url: img.url, crop: preview.crop } }))
+        : preview.images.length ? preview.images.map(img => ({ id: img.id, title: img.name, icon: { url: img.url, crop: img.crop ?? DEFAULT_CROP } }))
             : [{ title: TAWAN.name, icon: iconFor(preview, UNKNOWN) }];
     faces.innerHTML = icons.map(() => '<span class="ec_ed_face"><img alt=""></span>').join('');
     icons.forEach((it, i) => {
         const face = /** @type {HTMLElement} */ (faces.children[i]);
         face.title = it.title;
         face.style.borderColor = color;
+        if (it.id) face.dataset.img = it.id;
+        face.classList.toggle('ec_sel', !!it.id && it.id === (box.dataset.face || preview.images[0]?.id));
         placeIcon(face, it.icon, 48);
     });
     for (const det of box.querySelectorAll('.ec_ed_rule')) {
@@ -1039,10 +1246,12 @@ function readEditor() {
             id: /** @type {HTMLElement} */ (row).dataset.img,
             name: /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value,
             url: /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value,
+            crop: rowJson(row, 'crop'),
+            place: rowJson(row, 'place'),
         })),
         errorImages: {},
         icon: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value,
-        crop: editorCrop(box),
+        crop: rowJson(box.querySelector('.ec_ed_img'), 'crop') ?? DEFAULT_CROP, // what older versions use for every image
         lines: {},
     };
     for (const det of box.querySelectorAll('.ec_ed_rule')) {

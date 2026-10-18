@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { RULES, UNKNOWN } from '../errors.js';
-import { DEFAULT_COLOR, DEFAULT_CROP, cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, parseLines, pickLine, plainText, sanitizeCompanion, sanitizeCrop } from '../lib.js';
+import { DEFAULT_COLOR, DEFAULT_CROP, cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, parseLines, pickLine, plainText, sanitizeCompanion, sanitizeCrop, sanitizePlace } from '../lib.js';
 
 const id = (message, title = 'Chat Completion API', opts) => matchRule(message, title, opts)?.id ?? null;
 
@@ -264,4 +264,27 @@ test('cropBox puts the chosen point at the centre', () => {
     assert.equal(b.top + 0.25 * 80, 30);    // y point at the centre
     // whole image width across the circle
     assert.equal(cropBox({ x: 0.5, y: 0.5, size: 1 }, 100, 100, 64).left, 0);
+});
+
+test('sanitizePlace keeps what it can per screen shape', () => {
+    assert.equal(sanitizePlace(null), undefined);
+    assert.equal(sanitizePlace({ tall: { x: 'a', y: 1, h: 1 } }), undefined);
+    assert.deepEqual(sanitizePlace({ tall: { x: 0.5, y: 0.9, h: 0.6 }, wide: { x: 2, y: -1, h: 9 }, side: { x: 0, y: 0, h: 1 } }),
+        { tall: { x: 0.5, y: 0.9, h: 0.6 }, wide: { x: 1, y: 0, h: 1.5 } });
+});
+
+test('each image keeps its own icon crop and screen placement through export and import', () => {
+    const comp = sanitizeCompanion({
+        name: 'แม่มด',
+        crop: { x: 0.5, y: 0.2, size: 0.5 },
+        images: [
+            { id: 'stand', name: 'ยืน', url: 'https://example.com/stand.png' },
+            { id: 'fly', name: 'บิน', url: 'https://example.com/fly.png', crop: { x: 0.7, y: 0.1, size: 0.3 }, place: { tall: { x: 0.5, y: 0.6, h: 0.4 } } },
+        ],
+    });
+    assert.equal(comp.images[0].crop, undefined); // falls back to the companion's crop
+    assert.deepEqual(comp.images[1].crop, { x: 0.7, y: 0.1, size: 0.3 });
+    assert.deepEqual(comp.images[1].place, { tall: { x: 0.5, y: 0.6, h: 0.4 } });
+    const again = sanitizeCompanion(exportCompanion(comp));
+    assert.deepEqual(again.images, comp.images);
 });

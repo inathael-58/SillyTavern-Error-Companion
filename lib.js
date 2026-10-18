@@ -182,7 +182,7 @@ export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
     const images = [];
     const errorImages = {};
     const ids = new Set();
-    const addImage = (id, imgName, url) => {
+    const addImage = (id, imgName, url, extra = {}) => {
         if (images.length >= MAX_IMAGES) return null;
         url = typeof url === 'string' ? url.trim() : '';
         if (!url) return null;
@@ -191,7 +191,11 @@ export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
         let safeId = typeof id === 'string' && /^[A-Za-z0-9_-]{1,24}$/.test(id) && !ids.has(id) ? id : '';
         for (let n = images.length + 1; !safeId; n++) if (!ids.has(`img${n}`)) safeId = `img${n}`;
         ids.add(safeId);
-        images.push({ id: safeId, name: label, url });
+        const img = { id: safeId, name: label, url };
+        if (extra.crop && typeof extra.crop === 'object') img.crop = sanitizeCrop(extra.crop);
+        const place = sanitizePlace(extra.place);
+        if (place) img.place = place;
+        images.push(img);
         return safeId;
     };
 
@@ -199,7 +203,7 @@ export function sanitizeCompanion(raw, rules = [...RULES, UNKNOWN]) {
         const renamed = new Map(); // id in the file → id kept
         for (const img of raw.images) {
             if (!img || typeof img !== 'object') continue;
-            const kept = addImage(img.id, img.name, img.url);
+            const kept = addImage(img.id, img.name, img.url, img);
             // a repeated id in the file keeps pointing at the first image that had it
             if (kept && typeof img.id === 'string' && !renamed.has(img.id)) renamed.set(img.id, kept);
         }
@@ -250,6 +254,32 @@ export function sanitizeCrop(raw) {
  * crop.x / crop.y sits at the centre and crop.size of the image width spans the circle.
  * @returns {{ width: number, left: number, top: number }} px, for an absolutely placed <img>
  */
+/**
+ * Where an image stands in the full pop-up, set by the user per screen shape:
+ * tall (portrait, phones) and wide (landscape, computers). Each is x = the
+ * picture's centre and y = its bottom edge, as shares of the screen width and
+ * height, and h = its height as a share of the screen height.
+ * @returns {{ tall?: {x:number,y:number,h:number}, wide?: {x:number,y:number,h:number} } | undefined}
+ */
+export function sanitizePlace(raw) {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const num = (v, lo, hi) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.round(n * 1000) / 1000)) : null;
+    };
+    const out = {};
+    for (const key of LAYOUTS) {
+        const p = raw[key];
+        if (!p || typeof p !== 'object') continue;
+        const x = num(p.x, 0, 1), y = num(p.y, 0, 1.5), h = num(p.h, 0.05, 1.5);
+        if (x !== null && y !== null && h !== null) out[key] = { x, y, h };
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+
+/** Screen shapes a placement is saved for. */
+export const LAYOUTS = ['tall', 'wide'];
+
 export function cropBox(crop, natW, natH, d) {
     const width = d / crop.size;
     const height = natW ? width * (natH / natW) : width;
@@ -263,7 +293,11 @@ export function exportCompanion(companion) {
         version: 2,
         name: companion.name,
         color: companion.color,
-        images: (companion.images ?? []).map(({ id, name, url }) => ({ id, name, url })),
+        images: (companion.images ?? []).map(({ id, name, url, crop, place }) => ({
+            id, name, url,
+            ...(crop ? { crop: sanitizeCrop(crop) } : {}),
+            ...(sanitizePlace(place) ? { place: sanitizePlace(place) } : {}),
+        })),
         errorImages: { ...companion.errorImages },
         ...(companion.icon ? { icon: companion.icon } : {}),
         crop: sanitizeCrop(companion.crop),
