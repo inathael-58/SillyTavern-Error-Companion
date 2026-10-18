@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { RULES, UNKNOWN } from '../errors.js';
-import { DEFAULT_COLOR, DEFAULT_CROP, cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, parseLines, pickLine, plainText, sanitizeCompanion, sanitizeCrop, sanitizePlace } from '../lib.js';
+import { DEFAULT_COLOR, DEFAULT_CROP, cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, parseLines, pickEntry, pickLine, plainText, sanitizeCompanion, sanitizeCrop, sanitizePlace } from '../lib.js';
 
 const id = (message, title = 'Chat Completion API', opts) => matchRule(message, title, opts)?.id ?? null;
 
@@ -287,4 +287,33 @@ test('each image keeps its own icon crop and screen placement through export and
     assert.deepEqual(comp.images[1].place, { tall: { x: 0.5, y: 0.6, h: 0.4 } });
     const again = sanitizeCompanion(exportCompanion(comp));
     assert.deepEqual(again.images, comp.images);
+});
+
+test('a line can have a picture of its own', () => {
+    const c = sanitizeCompanion({
+        name: 'x',
+        images: [{ id: 'a', url: '/a.png' }, { id: 'b', url: '/b.png' }, { id: 'gone', url: '' }],
+        lines: {
+            overloaded: [
+                { from: 1, text: ['หนึ่ง', '  ', 'สอง'], images: ['', 'a', 'nope'] },
+                { from: 3, text: ['สาม', 'สี่'], images: ['b', 'gone'] },
+                { from: 3, text: ['ห้า'], images: ['a'] },
+            ],
+            quota: [{ from: 1, text: ['ไม่มีรูป'], images: ['', ''] }],
+        },
+    });
+    assert.deepEqual(c.lines.overloaded, [
+        { from: 1, text: ['หนึ่ง', 'สอง'] },
+        { from: 3, text: ['สาม', 'สี่', 'ห้า'], images: ['b', '', 'a'] },
+    ]);
+    assert.deepEqual(c.lines.quota, [{ from: 1, text: ['ไม่มีรูป'] }]);
+    assert.deepEqual(pickEntry(c.lines.overloaded, 4, () => 0), { text: 'สาม', img: 'b' });
+    assert.deepEqual(pickEntry(c.lines.overloaded, 1, () => 0.9), { text: 'สอง', img: '' });
+    // survives export → import, and a renamed image id is followed
+    assert.deepEqual(sanitizeCompanion(JSON.parse(JSON.stringify(exportCompanion(c)))).lines, c.lines);
+    const renamed = sanitizeCompanion({
+        name: 'y', images: [{ id: 'p', url: '/1.png' }, { id: 'p', url: '/2.png' }, { id: 'bad id!', url: '/3.png' }],
+        lines: { network: [{ from: 1, text: ['a', 'b'], images: ['p', 'bad id!'] }] },
+    });
+    assert.deepEqual(renamed.lines.network[0].images, ['p', 'img3']);
 });

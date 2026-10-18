@@ -21,24 +21,24 @@ import { BUILTIN_COMPANIONS, CHARACTER_LINES, EXPRESSION_FOR, SERAPHINA } from '
 import { RULES, UNKNOWN } from './errors.js';
 import {
     COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, LAYOUTS, MAX_DATA_URL, MOODS,
-    cropBox, dayKey, exportCompanion, formatLines, graphemes, inkFor, isSafeImageUrl, matchRule, pickLine, plainText,
+    cropBox, dayKey, exportCompanion, graphemes, inkFor, isSafeImageUrl, matchRule, pickEntry, plainText,
     sanitizeCompanion, sanitizeCrop, sanitizePlace,
 } from './lib.js';
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.6.0'; // keep in sync with manifest.json
+const VERSION = '0.7.0'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
 const TAWAN = Object.freeze({ id: 'tawan', name: 'ตะวัน', color: DEFAULT_COLOR, images: [], errorImages: {}, lines: {} });
 /** Sprite URLs carry the version, so a browser drops its cached copy when a picture is redrawn. */
 const builtinSprite = mood => new URL(`sprites/tawan/${mood}.webp?v=${VERSION}`, BASE_URL).href;
-/** Tawan's head in each of his 588×520 sprites (centre and width), for the round icon in the small bubble. */
+/** Tawan's head in each of his 586×520 sprites (centre and width), for the round icon in the small bubble. */
 const TAWAN_CROP = Object.fromEntries(Object.entries({
     neutral: [278, 122], tired: [282, 115], pious: [278, 121],
     exhausted: [262, 123], shocked: [280, 119], confused: [240, 137],
-}).map(([mood, [x, y]]) => [mood, { x: x / 588, y: y / 520, size: 280 / 588 }]));
+}).map(([mood, [x, y]]) => [mood, { x: x / 586, y: y / 520, size: 280 / 586 }]));
 
 /** Every companion that ships with the extension: read-only, like user-made ones plus a crop per image. */
 const BUILTINS = Object.freeze([TAWAN, ...BUILTIN_COMPANIONS.map(c => Object.freeze({
@@ -172,13 +172,14 @@ function activeCompanion() {
 }
 
 /**
- * The picture for this error: the image the companion picked for it, else its first image;
- * a companion without images uses Tawan's sprite for the error's mood.
+ * The picture for this error: the one picked for the line being said (lineImg), else the
+ * one picked for the error, else the first image; a companion without images uses
+ * Tawan's sprite for the error's mood.
  */
-function imageFor(comp, rule) {
+function imageFor(comp, rule, lineImg = '') {
     const images = comp.images ?? [];
     if (!images.length) return { url: builtinSprite(rule.mood), builtin: true };
-    const img = images.find(i => i.id === comp.errorImages?.[rule.id]) ?? images[0];
+    const img = (lineImg && images.find(i => i.id === lineImg)) || images.find(i => i.id === comp.errorImages?.[rule.id]) || images[0];
     return { url: img.url, builtin: false, crop: img.crop, place: img.place };
 }
 
@@ -187,9 +188,9 @@ function imageFor(comp, rule) {
  * else its picture with the companion's crop (built-in sprites: their own crop each).
  * @returns {{ url: string, crop: { x: number, y: number, size: number } | null }} crop null = fill
  */
-function iconFor(comp, rule) {
+function iconFor(comp, rule, lineImg = '') {
     if (comp.icon) return { url: comp.icon, crop: null };
-    const img = imageFor(comp, rule);
+    const img = imageFor(comp, rule, lineImg);
     return { url: img.url, crop: img.builtin ? TAWAN_CROP[rule.mood] : img.crop ?? sanitizeCrop(comp.crop) };
 }
 
@@ -313,7 +314,7 @@ function onToast(type, message, title, toast) {
 
 // ---------------------------------------------------------------- showing
 
-/** What is on screen now: { rule, raw, count, line, hits, comp } */
+/** What is on screen now: { rule, raw, count, line, img, hits, comp } (img = the line's own picture) */
 let current = null;
 
 /**
@@ -322,8 +323,9 @@ let current = null;
  * @param {number} count times seen today (1 = first)
  * @param {'full'|'mini'} [force]
  * @param {object} [comp] companion to use (default: the active one) — the editor previews unsaved ones
+ * @param {{ text: string, img: string }} [entry] say this line (default: one picked at random)
  */
-function show(rule, raw, count, force, comp = activeCompanion()) {
+function show(rule, raw, count, force, comp = activeCompanion(), entry = pickEntry(linesFor(comp, rule), count)) {
     const mode = settings().display;
     const fullOpen = !!root && !root.hidden;
     if (current?.rule === rule && current.comp === comp && (fullOpen || miniOpen())) {
@@ -336,8 +338,8 @@ function show(rule, raw, count, force, comp = activeCompanion()) {
     }
     // a vague follow-up ("could not get a reply") never covers the specific error it came with
     if (rule.followup && current && current.rule !== rule && (fullOpen || miniOpen())) return;
-    const line = pickLine(linesFor(comp, rule), count).replaceAll('{name}', comp.name);
-    current = { rule, raw, count, comp, line, hits: 1 };
+    const line = entry.text.replaceAll('{name}', comp.name);
+    current = { rule, raw, count, comp, line, img: entry.img, hits: 1 };
     const full = force ? force === 'full' : fullOpen || mode === 'full' || (mode === 'first' && count <= 1);
     if (full) openFull(); else openMini();
 }
@@ -430,7 +432,7 @@ function openFull() {
     if (!root) buildRoot();
     closeMini();
     const { rule, raw, line, comp } = current;
-    const pic = imageFor(comp, rule);
+    const pic = imageFor(comp, rule, current.img);
     current.place = pic.place;
     setSprite(root.querySelector('.ec_sprite'), pic.url);
     applyColors(root, comp);
@@ -552,7 +554,7 @@ function openMini() {
     if (!mini) buildMini();
     const { rule, line, comp } = current;
     mini.querySelector('.ec_face img').alt = comp.name;
-    placeIcon(mini.querySelector('.ec_face'), iconFor(comp, rule), 64);
+    placeIcon(mini.querySelector('.ec_face'), iconFor(comp, rule, current.img), 64);
     applyColors(mini, comp);
     mini.querySelector('.ec_mini_who').textContent = comp.name;
     mini.querySelector('.ec_mini_line').textContent = line;
@@ -813,236 +815,572 @@ async function confirmBox(text) {
 }
 
 // ---------------------------------------------------------------- companion editor
+// Three steps, one at a time:
+//   1 pictures — the companion's name and colour, then every picture with its
+//     name, where it stands on screen and its round icon
+//   2 lines — per error, what it says the first times and from the n-th time today on
+//   3 pictures for lines — per error which picture it shows, and per line if wanted
+// The form edits `draft`. Typing changes it in place; adding or removing a part redraws.
 
-let editingId = null; // id being edited, null = new
+/**
+ * @type {null | { id: string|null, name: string, color: string, icon: string, step: number,
+ *   images: { id: string, name: string, url: string, crop: object|null, place: object|null }[],
+ *   errorImages: Record<string, string>,
+ *   lines: Record<string, { from: number, text: string[], images: string[] }[]>,
+ *   open: Set<string>, iconOpen: string|null }}
+ */
+let draft = null;
+
+const STEPS = ['รูป', 'บทพูด', 'จับคู่รูปกับบท'];
 
 /**
  * @param {object|null} comp existing companion to edit, or null for a new one
  * @param {object} [start] starting values for a new one
  */
 function openEditor(comp, start) {
-    const box = $id('ec_editor');
     const c = comp ?? start ?? { name: '', color: DEFAULT_COLOR, images: [], errorImages: {}, lines: {} };
-    editingId = comp?.id ?? null;
+    const startCrop = c.crop ? sanitizeCrop(c.crop) : null; // older files: one crop for every image
+    draft = {
+        id: comp?.id ?? null,
+        name: c.name ?? '',
+        color: c.color || DEFAULT_COLOR,
+        icon: c.icon ?? '',
+        step: 0,
+        images: (c.images ?? []).map(img => ({
+            id: img.id, name: img.name ?? '', url: img.url ?? '',
+            crop: img.crop ? sanitizeCrop(img.crop) : startCrop, place: sanitizePlace(img.place) ?? null,
+        })),
+        errorImages: { ...c.errorImages },
+        lines: Object.fromEntries(RULE_IDS.map(id => [id, draftTiers(c.lines?.[id])])),
+        open: new Set(),
+        iconOpen: null,
+    };
+    const box = $id('ec_editor');
+    box.onclick = onEditorClick;
+    box.oninput = onEditorInput;
+    box.onchange = onEditorChange;
+    box.hidden = false;
+    renderEditor();
+    box.querySelector('#ec_ed_name')?.focus();
+}
+
+/** Saved tiers → tiers the form can edit: always a first one from 1, a picture slot per line. */
+function draftTiers(tiers) {
+    const out = (tiers ?? []).map(t => ({ from: t.from, text: [...t.text], images: t.text.map((_, i) => t.images?.[i] ?? '') }));
+    if (out[0]?.from !== 1) out.unshift({ from: 1, text: [], images: [] });
+    return out;
+}
+
+function closeEditor() {
+    const box = $id('ec_editor');
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = '';
+    draft = null;
+}
+
+/** Lines the user wrote for an error (blank ones don't count). */
+const ownLines = id => draft.lines[id].reduce((n, t) => n + t.text.filter(x => x.trim()).length, 0);
+const imageName = (img, i) => img.name.trim() || `รูป ${i + 1}`;
+const usableImages = () => draft.images.filter(i => i.url.trim() && isSafeImageUrl(i.url.trim()));
+
+function renderEditor() {
+    const box = $id('ec_editor');
+    if (!box || !draft) return;
+    const step = draft.step;
     box.innerHTML = `
         <div class="ec_editor">
-            <div class="ec_set_title">${comp ? 'แก้ไขคอมพาเนียน' : 'คอมพาเนียนใหม่'}</div>
-            <div class="ec_ed_head">
-                <label class="ec_field">ชื่อ <input type="text" id="ec_ed_name" class="text_pole" maxlength="40" placeholder="เช่น พี่หมอก"></label>
-                <label class="ec_field ec_ed_colorfield">สีป้ายชื่อ <input type="color" id="ec_ed_color"></label>
+            <div class="ec_set_title">${draft.id ? `แก้ไข "${esc(draft.name)}"` : 'คอมพาเนียนใหม่'}</div>
+            <div class="ec_steps">${STEPS.map((title, i) => `
+                <div class="ec_step${i === step ? ' ec_cur' : ''}" data-step="${i}" role="button" tabindex="0">
+                    <span class="ec_step_n">${i + 1}</span><span class="ec_step_t">${title}</span>
+                </div>`).join('')}
             </div>
-
-            <div class="ec_set_title">รูป</div>
-            <small class="ec_note">เพิ่มได้หลายรูป ตั้งชื่อให้จำง่าย แล้วเลือกใน error แต่ละแบบด้านล่างว่าจะใช้รูปไหน · error ที่ไม่ได้เลือกใช้รูปแรก · ไม่มีรูปเลย = ใช้รูปของตะวัน · รูปท่าไหนก็ได้ ครึ่งตัว เต็มตัว หรือลอยกลางอากาศ แล้วกด <b>จัดตำแหน่งบนจอ</b> เพื่อวางเอง · แนะนำ PNG หรือ WebP พื้นหลังโปร่งใส สูงอย่างน้อย 600 px ไม่เกิน 1.5 MB ต่อรูป · กด 📁 เพื่อเลือกรูปจากเครื่อง (ย่อให้เอง และติดไปกับไฟล์ที่ส่งออก) หรือวางลิงก์รูปที่เปิดได้จากทุกเครื่อง</small>
-            <div id="ec_ed_images" class="ec_ed_images"></div>
-            <div class="ec_btns"><div id="ec_ed_addimg" class="menu_button"><i class="fa-solid fa-plus"></i> เพิ่มรูป</div></div>
-
-            <div class="ec_set_title">ไอคอนในแบบมินิ</div>
-            <small class="ec_note">แตะวงที่จะปรับ แล้วเลื่อนแถบให้หน้าอยู่กลางวง · แต่ละรูปตั้งได้ไม่เหมือนกัน</small>
-            <div id="ec_ed_faces" class="ec_ed_faces"></div>
-            <div class="ec_ed_sliders">
-                <label>ซ้าย ↔ ขวา <input type="range" id="ec_ed_cx" min="0" max="100" step="1"></label>
-                <label>ขึ้น ↕ ลง <input type="range" id="ec_ed_cy" min="0" max="100" step="1"></label>
-                <label>ซูม <input type="range" id="ec_ed_cz" min="0" max="90" step="1"></label>
-                <div id="ec_ed_crop_reset" class="menu_button" title="ตำแหน่งเริ่มต้น"><i class="fa-solid fa-rotate-left"></i></div>
-                <div id="ec_ed_crop_all" class="menu_button" title="ใช้ตำแหน่งนี้กับทุกรูป"><i class="fa-solid fa-clone"></i> ใช้กับทุกรูป</div>
+            <div class="ec_ed_body">${[stepImagesHtml, stepLinesHtml, stepPicksHtml][step]()}</div>
+            <div class="ec_ed_nav">
+                ${step > 0 ? `<div class="menu_button ec_ed_go" data-step="${step - 1}"><i class="fa-solid fa-arrow-left"></i> ${STEPS[step - 1]}</div>` : '<span></span>'}
+                ${step < STEPS.length - 1 ? `<div class="menu_button ec_ed_go ec_ed_next" data-step="${step + 1}">ถัดไป: ${STEPS[step + 1]} <i class="fa-solid fa-arrow-right"></i></div>` : ''}
             </div>
-            <small id="ec_ed_cropnote" class="ec_note"></small>
-            <label class="ec_field">หรือใช้รูปไอคอนแยก <small class="ec_note ec_inline">(ไม่บังคับ · รูปหน้าตรง ๆ จะเต็มวงพอดี)</small>
-                <input type="url" id="ec_ed_icon" class="text_pole" placeholder="https://…" autocomplete="off" spellcheck="false"></label>
-
-            <div class="ec_set_title">error แต่ละแบบ</div>
-            <small class="ec_note">เลือกรูปและเขียนบทพูด · บรรทัดละประโยค (สุ่มมาหนึ่งประโยค) · ขึ้นต้นด้วย <code>[3]</code> = ใช้ตั้งแต่เจอครั้งที่ 3 ของวัน · <code>{n}</code> = จำนวนครั้ง · <code>{name}</code> = ชื่อคอมพาเนียน · ว่าง = ใช้บทของตะวัน · คำอธิบายใต้บทพูดใช้ของกลางเหมือนกันทุกตัว</small>
-            ${ALL_RULES.map(r => `
-            <details class="ec_ed_rule" data-rule="${r.id}">
-                <summary><span class="ec_ed_face ec_ed_face_sm"><img alt=""></span><span>${esc(r.name)}</span> <small class="ec_ed_mark"></small></summary>
-                <label class="ec_field">รูป <select class="text_pole ec_ed_pick"></select></label>
-                <label class="ec_field">บทพูด
-                    <textarea class="text_pole" rows="4" spellcheck="false" placeholder="${esc(formatLines(r.lines))}"></textarea></label>
-            </details>`).join('')}
-
-            <div class="ec_btns">
+            <div class="ec_btns ec_ed_end">
                 <div id="ec_ed_save" class="menu_button"><i class="fa-solid fa-floppy-disk"></i> บันทึก</div>
                 <div id="ec_ed_try" class="menu_button"><i class="fa-solid fa-play"></i> ลองดู</div>
                 <div id="ec_ed_cancel" class="menu_button"><i class="fa-solid fa-xmark"></i> ยกเลิก</div>
             </div>
         </div>`;
-
-    /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value = c.name ?? '';
-    /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value = c.color || DEFAULT_COLOR;
-    /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value = c.icon ?? '';
-    const startCrop = c.crop ? sanitizeCrop(c.crop) : undefined; // older files: one crop for every image
-    for (const img of c.images ?? []) addImageRow(box, { ...img, crop: img.crop ?? startCrop });
-    box.dataset.face = c.images?.[0]?.id ?? '';
-    refreshPicks(box);
-    for (const det of box.querySelectorAll('.ec_ed_rule')) {
-        const id = /** @type {HTMLElement} */ (det).dataset.rule;
-        /** @type {HTMLSelectElement} */ (det.querySelector('.ec_ed_pick')).value = c.errorImages?.[id] ?? '';
-        det.querySelector('textarea').value = formatLines(c.lines?.[id]);
-        markRule(det);
+    if (step === 0) {
+        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value = draft.name;
+        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value = draft.color;
+        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value = draft.icon;
+        for (const card of box.querySelectorAll('.ec_ed_img')) fillImageCard(/** @type {HTMLElement} */ (card));
     }
-    const setCropInputs = k => {
-        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cx')).value = String(Math.round(k.x * 100));
-        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cy')).value = String(Math.round(k.y * 100));
-        /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_cz')).value = String(Math.round((1 - k.size) * 100));
-    };
-    const faceRow = () => /** @type {HTMLElement} */ (box.querySelector(`.ec_ed_img[data-img="${CSS.escape(box.dataset.face ?? '')}"]`) ?? box.querySelector('.ec_ed_img'));
-    const showFace = () => setCropInputs(rowJson(faceRow(), 'crop') ?? DEFAULT_CROP);
-    showFace();
-    updatePreview();
+    if (step === 1) {
+        for (const det of box.querySelectorAll('.ec_ed_rule')) fillLines(/** @type {HTMLElement} */ (det));
+    }
+    if (step === 2) {
+        for (const det of box.querySelectorAll('.ec_ed_rule')) fillPicks(/** @type {HTMLElement} */ (det));
+    }
+    box.style.setProperty('--ec-sun', draft.color);
+}
 
-    box.oninput = e => {
-        const t = /** @type {HTMLElement} */ (e.target);
-        if (t.closest('.ec_ed_sliders') && faceRow()) setRowJson(faceRow(), 'crop', editorCrop(box));
-        if (t.closest('.ec_ed_img')) refreshPicks(box);
-        if (t.closest('.ec_ed_rule')) markRule(t.closest('.ec_ed_rule'));
-        updatePreview();
+// ---- step 1: pictures
+
+function stepImagesHtml() {
+    return `
+        <div class="ec_ed_head">
+            <label class="ec_field">ชื่อคอมพาเนียน <input type="text" id="ec_ed_name" class="text_pole" maxlength="40" placeholder="เช่น พี่หมอก"></label>
+            <label class="ec_field ec_ed_colorfield">สีป้ายชื่อ <input type="color" id="ec_ed_color"></label>
+        </div>
+        <div class="ec_set_title">คลังรูป</div>
+        <small class="ec_note">ใส่รูปทุกท่าที่จะใช้ แล้วตั้งชื่อให้จำง่าย (ยิ้ม, ตกใจ, ง่วง) · จะเลือกว่ารูปไหนใช้กับบทไหนในขั้นที่ 3
+            · แนะนำ PNG หรือ WebP พื้นหลังโปร่งใส สูงอย่างน้อย 600 px ไม่เกิน 1.5 MB · ยังไม่มีรูป = ใช้รูปของตะวัน</small>
+        <div class="ec_ed_images">${draft.images.map((img, i) => imageCardHtml(img, i)).join('')}</div>
+        <div class="ec_btns">
+            <label class="menu_button" title="เลือกได้หลายรูปพร้อมกัน · รูปจะติดไปกับไฟล์ที่ส่งออกด้วย"><i class="fa-solid fa-folder-open"></i> เพิ่มรูปจากเครื่อง
+                <input type="file" id="ec_ed_addfiles" accept="image/*" multiple hidden></label>
+            <div id="ec_ed_addurl" class="menu_button" title="รูปที่ฝากไว้บนเว็บ เปิดได้จากทุกเครื่อง"><i class="fa-solid fa-link"></i> เพิ่มจากลิงก์</div>
+        </div>
+        <details class="ec_ed_more">
+            <summary>รูปไอคอนแยก (ไม่บังคับ)</summary>
+            <small class="ec_note">ปกติไอคอนวงกลมตอนเด้งแบบมินิจะครอปจากรูปในคลัง ถ้ามีรูปหน้าตรง ๆ แยกไว้ ใส่ลิงก์ที่นี่ได้ (ใช้รูปนี้กับทุก error)</small>
+            <input type="url" id="ec_ed_icon" class="text_pole" placeholder="https://…" autocomplete="off" spellcheck="false">
+        </details>`;
+}
+
+function imageCardHtml(img, i) {
+    const local = img.url.startsWith('data:');
+    const placed = LAYOUTS.filter(k => img.place?.[k]).map(k => LAYOUT_SHORT[k]);
+    const iconOpen = draft.iconOpen === img.id;
+    return `
+        <div class="ec_ed_img" data-img="${esc(img.id)}">
+            <img class="ec_ed_thumb" alt="">
+            <div class="ec_ed_img_fields">
+                <div class="ec_ed_imgtop">
+                    <input type="text" class="text_pole ec_ed_imgname" maxlength="30" placeholder="ชื่อรูป เช่น ยิ้ม, ตกใจ">
+                    ${i > 0 ? '<div class="menu_button ec_ed_up" title="เลื่อนขึ้น (รูปแรกคือรูปเริ่มต้นของทุก error)"><i class="fa-solid fa-arrow-up"></i></div>' : ''}
+                    <div class="menu_button ec_ed_delimg" title="ลบรูปนี้"><i class="fa-solid fa-trash"></i></div>
+                </div>
+                ${i === 0 ? '<small class="ec_ed_tag">รูปเริ่มต้น · error ที่ยังไม่ได้เลือกรูปจะใช้รูปนี้</small>' : ''}
+                <div class="ec_ed_urlrow">
+                    ${local ? `<span class="ec_ed_local"><i class="fa-solid fa-image"></i> รูปจากเครื่อง · ${Math.round(img.url.length * 0.75 / 1024)} KB</span>`
+                        : '<input type="url" class="text_pole ec_ed_url" placeholder="https://… หรือกด 📁" autocomplete="off" spellcheck="false">'}
+                    <label class="menu_button ec_ed_pickfile" title="${local ? 'เปลี่ยนรูป' : 'เลือกรูปจากเครื่อง'}"><i class="fa-solid fa-folder-open"></i><input type="file" accept="image/*" hidden></label>
+                </div>
+                <div class="ec_ed_row">
+                    <div class="menu_button ec_ed_place" title="ลากรูปไปวางและปรับขนาดบนจอจริง"><i class="fa-solid fa-up-down-left-right"></i> ตำแหน่งบนจอ</div>
+                    <small class="ec_ed_status">${placed.length ? `✓ ${placed.join(' · ')}` : 'ยืนบนกล่องข้อความ (ค่าเดิม)'}</small>
+                </div>
+                <div class="ec_ed_row">
+                    <span class="ec_ed_face ec_ed_face_sm"><img alt=""></span>
+                    <div class="menu_button ec_ed_iconbtn${iconOpen ? ' ec_on' : ''}" title="ส่วนของรูปที่โชว์ในวงกลมตอนเด้งแบบมินิ"><i class="fa-solid fa-crop-simple"></i> ไอคอนมินิ</div>
+                </div>
+                ${iconOpen ? `
+                <div class="ec_ed_sliders">
+                    <label><span>ซ้าย/ขวา</span><input type="range" data-crop="x" min="0" max="100" step="1"></label>
+                    <label><span>ขึ้น/ลง</span><input type="range" data-crop="y" min="0" max="100" step="1"></label>
+                    <label><span>ซูม</span><input type="range" data-crop="z" min="0" max="90" step="1"></label>
+                    <div class="menu_button ec_ed_crop_reset" title="ตำแหน่งเริ่มต้น"><i class="fa-solid fa-rotate-left"></i></div>
+                    <div class="menu_button ec_ed_crop_all" title="ใช้ตำแหน่งนี้กับทุกรูป"><i class="fa-solid fa-clone"></i> ใช้กับทุกรูป</div>
+                </div>` : ''}
+            </div>
+        </div>`;
+}
+
+/** Values, thumbnail and round icon of one picture's card (kept out of the HTML so nothing needs escaping twice). */
+function fillImageCard(card) {
+    const img = draft.images.find(i => i.id === card.dataset.img);
+    if (!img) return;
+    /** @type {HTMLInputElement} */ (card.querySelector('.ec_ed_imgname')).value = img.name;
+    const urlInput = /** @type {HTMLInputElement} */ (card.querySelector('.ec_ed_url'));
+    if (urlInput && document.activeElement !== urlInput) urlInput.value = img.url;
+    const url = img.url.trim();
+    const ok = !url || isSafeImageUrl(url);
+    urlInput?.classList.toggle('ec_bad', !ok);
+    const thumb = /** @type {HTMLImageElement} */ (card.querySelector('.ec_ed_thumb'));
+    setSprite(thumb, url && ok ? url : builtinSprite('neutral'));
+    thumb.classList.toggle('ec_placeholder', !(url && ok));
+    const crop = img.crop ?? DEFAULT_CROP;
+    placeIcon(card.querySelector('.ec_ed_face'), url && ok ? { url, crop } : iconFor(TAWAN, UNKNOWN), 28);
+    const set = (k, v) => {
+        const el = /** @type {HTMLInputElement} */ (card.querySelector(`[data-crop="${k}"]`));
+        if (el) el.value = String(Math.round(v * 100));
     };
-    box.onchange = box.oninput;
-    box.querySelector('#ec_ed_addimg').addEventListener('click', () => {
-        const row = addImageRow(box, { id: '', name: '', url: '', crop: faceRow() ? editorCrop(box) : undefined });
-        if (!box.dataset.face) box.dataset.face = row.dataset.img;
-        refreshPicks(box);
-        updatePreview();
-        row.querySelector('.ec_ed_imgname').focus();
-    });
-    box.querySelector('#ec_ed_images').addEventListener('click', e => {
-        const t = /** @type {HTMLElement} */ (e.target);
-        const placeRow = t.closest('.ec_ed_place')?.closest('.ec_ed_img');
-        if (placeRow) return startPlacing(box, /** @type {HTMLElement} */ (placeRow));
-        const row = t.closest('.ec_ed_delimg')?.closest('.ec_ed_img');
-        if (!row) return;
-        row.remove();
-        if (box.dataset.face === /** @type {HTMLElement} */ (row).dataset.img) {
-            box.dataset.face = /** @type {HTMLElement} */ (box.querySelector('.ec_ed_img'))?.dataset.img ?? '';
-            showFace();
-        }
-        refreshPicks(box);
-        updatePreview();
-    });
-    // pointerdown, not click: the field losing focus redraws the circles before a click lands
-    box.querySelector('#ec_ed_faces').addEventListener('pointerdown', e => {
-        const id = /** @type {HTMLElement} */ (e.target).closest('[data-img]')?.dataset.img;
-        if (!id) return;
-        box.dataset.face = id;
-        showFace();
-        updatePreview();
-    });
-    box.querySelector('#ec_ed_crop_all').addEventListener('click', () => {
-        const crop = editorCrop(box);
-        for (const row of box.querySelectorAll('.ec_ed_img')) setRowJson(/** @type {HTMLElement} */ (row), 'crop', crop);
-        updatePreview();
-    });
-    box.querySelector('#ec_ed_images').addEventListener('change', async e => {
-        const input = /** @type {HTMLInputElement} */ (e.target);
-        if (input.type !== 'file') return; // a name or link field losing focus
-        const file = input.files?.[0];
-        input.value = ''; // so picking the same file again still fires
-        if (!file) return;
-        const row = input.closest('.ec_ed_img');
+    set('x', crop.x);
+    set('y', crop.y);
+    set('z', 1 - crop.size);
+}
+
+const newImageId = () => {
+    const taken = new Set(draft.images.map(i => i.id));
+    for (let n = draft.images.length + 1; ; n++) if (!taken.has(`img${n}`)) return `img${n}`;
+};
+
+async function addImageFiles(files) {
+    let bad = 0;
+    for (const file of files) {
         const url = await imageFileToDataUrl(file);
-        if (!url) return notify('warning', 'เปิดรูปนี้ไม่ได้ ลองไฟล์ PNG, JPG หรือ WebP');
-        /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value = url;
-        const name = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname'));
-        if (!name.value.trim()) name.value = file.name.replace(/\.[^.]+$/, '').slice(0, 30);
-        refreshPicks(box);
-        updatePreview();
+        if (!draft) return;
+        if (!url) { bad++; continue; }
+        const last = draft.images[draft.images.length - 1];
+        draft.images.push({ id: newImageId(), name: file.name.replace(/\.[^.]+$/, '').slice(0, 30), url, crop: last?.crop ?? null, place: null });
+    }
+    if (bad) notify('warning', 'เปิดบางรูปไม่ได้ ลองไฟล์ PNG, JPG หรือ WebP');
+    renderEditor();
+}
+
+function removeImage(id) {
+    draft.images = draft.images.filter(i => i.id !== id);
+    for (const [rule, pick] of Object.entries(draft.errorImages)) if (pick === id) delete draft.errorImages[rule];
+    for (const tiers of Object.values(draft.lines)) {
+        for (const t of tiers) t.images = t.images.map(x => (x === id ? '' : x));
+    }
+    if (draft.iconOpen === id) draft.iconOpen = null;
+}
+
+// ---- step 2: lines
+
+function stepLinesHtml() {
+    return `
+        <small class="ec_note">เขียนบทให้ error ที่อยากให้พูดเอง · <b>ช่องละ 1 ประโยค</b> ตอนเจอ error ระบบจะสุ่มมา 1 ประโยค
+            · ชุด "ตั้งแต่ครั้งที่…" ใช้แทนชุดแรกเมื่อเจอ error เดิมซ้ำในวันเดียวกัน
+            · <code>{n}</code> = เจอกี่ครั้งแล้ว · <code>{name}</code> = ชื่อคอมพาเนียน
+            · error ที่ไม่ได้เขียน ใช้บทของตะวัน · คำอธิบายใต้บทพูดใช้ของกลางเหมือนกันทุกตัว</small>
+        ${ALL_RULES.map(r => `
+        <details class="ec_ed_rule" data-rule="${r.id}"${draft.open.has(r.id) ? ' open' : ''}>
+            <summary><span class="ec_ed_rulename">${esc(r.name)} <small class="ec_ed_mark"></small></span></summary>
+            <div class="ec_ed_rulebody"></div>
+        </details>`).join('')}`;
+}
+
+function fillLines(det) {
+    const id = det.dataset.rule;
+    const rule = ruleById(id);
+    const tiers = draft.lines[id];
+    const n = ownLines(id);
+    det.querySelector('.ec_ed_mark').textContent = n ? `· ${n} ประโยค` : '· ใช้บทของตะวัน';
+    det.querySelector('.ec_ed_rulebody').innerHTML = tiers.map((t, ti) => `
+        <div class="ec_ed_tier" data-tier="${ti}">
+            <div class="ec_ed_tierhead">${ti === 0
+                ? '<b>ครั้งแรก ๆ ของวัน</b>'
+                : `<b>ตั้งแต่ครั้งที่</b> <input type="number" class="text_pole ec_ed_from" min="2" max="999"> <b>ของวัน</b>
+                   <div class="menu_button ec_ed_deltier" title="ลบชุดนี้"><i class="fa-solid fa-trash"></i></div>`}
+                <small>สุ่ม 1 ประโยค</small>
+            </div>
+            ${t.text.map((_, li) => `
+            <div class="ec_ed_line" data-line="${li}">
+                <input type="text" class="text_pole ec_ed_linetext" maxlength="300">
+                <div class="menu_button ec_ed_delline" title="ลบประโยคนี้"><i class="fa-solid fa-xmark"></i></div>
+            </div>`).join('')}
+            <div class="menu_button ec_ed_addline"><i class="fa-solid fa-plus"></i> ประโยค</div>
+        </div>`).join('') + `
+        <div class="ec_btns">
+            <div class="menu_button ec_ed_addtier" title="บทที่ใช้เมื่อเจอ error นี้ซ้ำหลายครั้งในวันเดียวกัน"><i class="fa-solid fa-layer-group"></i> เพิ่มชุดตอนเจอซ้ำ</div>
+            ${n ? '' : '<div class="menu_button ec_ed_copytawan" title="เอาบทของตะวันมาแก้ต่อ"><i class="fa-solid fa-copy"></i> เริ่มจากบทของตะวัน</div>'}
+        </div>`;
+    for (const tierEl of det.querySelectorAll('.ec_ed_tier')) {
+        const t = tiers[Number(/** @type {HTMLElement} */ (tierEl).dataset.tier)];
+        const from = /** @type {HTMLInputElement} */ (tierEl.querySelector('.ec_ed_from'));
+        if (from) from.value = String(t.from);
+        tierEl.querySelectorAll('.ec_ed_linetext').forEach((input, li) => {
+            /** @type {HTMLInputElement} */ (input).value = t.text[li];
+            /** @type {HTMLInputElement} */ (input).placeholder = li === 0 && t.from === 1 ? `เช่น ${rule.lines[0].text[0]}` : 'พิมพ์ประโยค…';
+        });
+    }
+}
+
+/** Sort an error's tiers by when they start; two with the same start become one. */
+function tidyTiers(id) {
+    const tiers = draft.lines[id];
+    const merged = [];
+    for (const t of [...tiers].sort((a, b) => a.from - b.from)) {
+        const same = merged.find(m => m.from === t.from);
+        if (same) { same.text.push(...t.text); same.images.push(...t.images); } else merged.push(t);
+    }
+    draft.lines[id] = merged;
+}
+
+// ---- step 3: which picture for which error and line
+
+function stepPicksHtml() {
+    const images = usableImages();
+    return `
+        <small class="ec_note">${images.length
+            ? 'เลือก <b>รูปหลัก</b> ของแต่ละ error · ถ้าอยากให้บางประโยคใช้รูปอื่น เลือกทีละประโยคได้ · กด ▶ เพื่อดูของจริง'
+            : 'ยังไม่มีรูปในคลัง ทุก error ใช้รูปของตะวันไปก่อน · กลับไปเพิ่มรูปที่ขั้นที่ 1'}</small>
+        ${ALL_RULES.map(r => `
+        <details class="ec_ed_rule" data-rule="${r.id}"${draft.open.has(r.id) ? ' open' : ''}>
+            <summary><span class="ec_ed_face ec_ed_face_sm"><img alt=""></span><span class="ec_ed_rulename">${esc(r.name)} <small class="ec_ed_mark"></small></span></summary>
+            <div class="ec_ed_rulebody"></div>
+        </details>`).join('')}`;
+}
+
+function fillPicks(det) {
+    const id = det.dataset.rule;
+    const rule = ruleById(id);
+    const images = usableImages();
+    const preview = draftPreview();
+    const main = images.find(i => i.id === draft.errorImages[id]) ?? images[0];
+    const face = /** @type {HTMLElement} */ (det.querySelector('summary .ec_ed_face'));
+    face.style.borderColor = draft.color;
+    placeIcon(face, iconFor(preview, rule), 28);
+    const lines = [];
+    draft.lines[id].forEach((t, ti) => t.text.forEach((text, li) => { if (text.trim()) lines.push({ t, ti, li, text }); }));
+    const own = lines.filter(l => l.t.images[l.li] && images.some(i => i.id === l.t.images[l.li])).length;
+    det.querySelector('.ec_ed_mark').textContent = images.length
+        ? `· ${imageName(main, draft.images.indexOf(main))}${own ? ` · อีก ${own} ประโยคใช้รูปของตัวเอง` : ''}` : '';
+    const body = det.querySelector('.ec_ed_rulebody');
+    if (!images.length) {
+        body.innerHTML = `<div class="ec_btns"><div class="menu_button ec_ed_tryrule"><i class="fa-solid fa-play"></i> ลองดู error นี้</div></div>`;
+        return;
+    }
+    const tierName = t => (t.from === 1 ? 'ครั้งแรก ๆ' : `ครั้งที่ ${t.from}+`);
+    body.innerHTML = `
+        <div class="ec_ed_subhead">รูปหลักของ error นี้</div>
+        <div class="ec_ed_strip">${images.map(img => `
+            <div class="ec_ed_pick${img === main ? ' ec_sel' : ''}" data-pick="${esc(img.id)}" role="button" tabindex="0" title="${esc(imageName(img, draft.images.indexOf(img)))}">
+                <img alt=""><span>${esc(imageName(img, draft.images.indexOf(img)))}</span>
+            </div>`).join('')}
+        </div>
+        <div class="ec_ed_subhead">รูปของแต่ละประโยค <small class="ec_note ec_inline">(ไม่บังคับ)</small></div>
+        ${lines.length ? lines.map(({ t, ti, li }) => `
+        <div class="ec_ed_lp" data-tier="${ti}" data-line="${li}">
+            <img class="ec_ed_lp_thumb" alt="">
+            <div class="ec_ed_lp_main">
+                <div class="ec_ed_lp_text"><small class="ec_ed_lp_tier">${tierName(t)}</small> <span></span></div>
+                <select class="text_pole ec_ed_lp_pick">
+                    <option value="">ใช้รูปหลัก</option>
+                    ${images.map(img => `<option value="${esc(img.id)}">${esc(imageName(img, draft.images.indexOf(img)))}</option>`).join('')}
+                </select>
+            </div>
+            <div class="menu_button ec_ed_tryline" title="ดูประโยคนี้กับรูปนี้"><i class="fa-solid fa-play"></i></div>
+        </div>`).join('')
+        : '<small class="ec_note">error นี้ยังใช้บทของตะวัน · เขียนบทเองในขั้นที่ 2 ก่อน แล้วค่อยเลือกรูปทีละประโยค</small>'}
+        <div class="ec_btns"><div class="menu_button ec_ed_tryrule"><i class="fa-solid fa-play"></i> ลองดู error นี้ (สุ่มประโยค)</div></div>`;
+    body.querySelectorAll('.ec_ed_pick').forEach(el => {
+        setSprite(el.querySelector('img'), images.find(i => i.id === /** @type {HTMLElement} */ (el).dataset.pick).url);
     });
-    box.querySelector('#ec_ed_crop_reset').addEventListener('click', () => {
-        setCropInputs(DEFAULT_CROP);
-        if (faceRow()) setRowJson(faceRow(), 'crop', editorCrop(box));
-        updatePreview();
-    });
-    box.querySelector('#ec_ed_save').addEventListener('click', saveEditor);
-    box.querySelector('#ec_ed_try').addEventListener('click', () => {
+    for (const row of body.querySelectorAll('.ec_ed_lp')) {
+        const t = draft.lines[id][Number(/** @type {HTMLElement} */ (row).dataset.tier)];
+        const li = Number(/** @type {HTMLElement} */ (row).dataset.line);
+        row.querySelector('.ec_ed_lp_text span').textContent = t.text[li];
+        const pick = images.some(i => i.id === t.images[li]) ? t.images[li] : '';
+        /** @type {HTMLSelectElement} */ (row.querySelector('select')).value = pick;
+        setSprite(row.querySelector('.ec_ed_lp_thumb'), (images.find(i => i.id === pick) ?? main).url);
+    }
+}
+
+// ---- events
+
+function onEditorClick(e) {
+    const t = /** @type {HTMLElement} */ (e.target);
+    if (!draft) return;
+    const box = $id('ec_editor');
+    const go = t.closest('.ec_step, .ec_ed_go');
+    if (go) {
+        draft.step = Number(/** @type {HTMLElement} */ (go).dataset.step);
+        renderEditor();
+        box.querySelector('.ec_steps').scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return;
+    }
+    if (t.closest('#ec_ed_save')) return saveEditor();
+    if (t.closest('#ec_ed_cancel')) return closeEditor();
+    if (t.closest('#ec_ed_try')) {
         const comp = readEditor();
         if (!comp) return;
         const touched = ALL_RULES.filter(r => comp.lines[r.id] || comp.errorImages[r.id]);
         const pool = touched.length ? touched : RULES;
-        const rule = pool[Math.floor(Math.random() * pool.length)];
-        closeFull();
-        show(rule, rule.sample, 1, 'full', { id: 'preview', ...comp });
-    });
-    box.querySelector('#ec_ed_cancel').addEventListener('click', closeEditor);
-    box.hidden = false;
-    box.querySelector('#ec_ed_name').focus();
+        return tryDraft(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    if (t.closest('#ec_ed_addurl')) {
+        const last = draft.images[draft.images.length - 1];
+        draft.images.push({ id: newImageId(), name: '', url: '', crop: last?.crop ?? null, place: null });
+        renderEditor();
+        /** @type {HTMLInputElement} */ ([...box.querySelectorAll('.ec_ed_url')].pop())?.focus();
+        return;
+    }
+
+    // a picture's card
+    const card = /** @type {HTMLElement} */ (t.closest('.ec_ed_img'));
+    const img = card && draft.images.find(i => i.id === card.dataset.img);
+    if (img) {
+        const i = draft.images.indexOf(img);
+        if (t.closest('.ec_ed_delimg')) { removeImage(img.id); return renderEditor(); }
+        if (t.closest('.ec_ed_up')) {
+            [draft.images[i - 1], draft.images[i]] = [draft.images[i], draft.images[i - 1]];
+            return renderEditor();
+        }
+        if (t.closest('.ec_ed_place')) return startPlacing(img);
+        if (t.closest('.ec_ed_iconbtn')) {
+            draft.iconOpen = draft.iconOpen === img.id ? null : img.id;
+            return renderEditor();
+        }
+        if (t.closest('.ec_ed_crop_reset')) { img.crop = { ...DEFAULT_CROP }; return fillImageCard(card); }
+        if (t.closest('.ec_ed_crop_all')) {
+            for (const other of draft.images) other.crop = { ...(img.crop ?? DEFAULT_CROP) };
+            for (const c of box.querySelectorAll('.ec_ed_img')) fillImageCard(/** @type {HTMLElement} */ (c));
+            return;
+        }
+        return;
+    }
+
+    // an error, in step 2 or 3
+    const det = /** @type {HTMLElement} */ (t.closest('.ec_ed_rule'));
+    if (!det || t.closest('summary')) return;
+    const id = det.dataset.rule;
+    const rule = ruleById(id);
+    const tiers = draft.lines[id];
+    const tierEl = /** @type {HTMLElement} */ (t.closest('.ec_ed_tier, .ec_ed_lp'));
+    const tier = tierEl ? tiers[Number(tierEl.dataset.tier)] : null;
+    const lineIdx = Number((/** @type {HTMLElement} */ (t.closest('[data-line]')))?.dataset.line);
+    const refill = focus => {
+        fillLines(det);
+        if (focus) /** @type {HTMLInputElement} */ (det.querySelector(focus))?.focus();
+    };
+    if (t.closest('.ec_ed_addline')) {
+        tier.text.push('');
+        tier.images.push('');
+        return refill(`.ec_ed_tier[data-tier="${tierEl.dataset.tier}"] [data-line="${tier.text.length - 1}"] .ec_ed_linetext`);
+    }
+    if (t.closest('.ec_ed_delline')) {
+        tier.text.splice(lineIdx, 1);
+        tier.images.splice(lineIdx, 1);
+        return refill();
+    }
+    if (t.closest('.ec_ed_deltier')) {
+        tiers.splice(Number(tierEl.dataset.tier), 1);
+        return refill();
+    }
+    if (t.closest('.ec_ed_addtier')) {
+        const from = Math.max(2, tiers[tiers.length - 1].from + 2);
+        tiers.push({ from, text: [''], images: [''] });
+        return refill(`.ec_ed_tier[data-tier="${tiers.length - 1}"] .ec_ed_linetext`);
+    }
+    if (t.closest('.ec_ed_copytawan')) {
+        draft.lines[id] = draftTiers(rule.lines);
+        return refill();
+    }
+    const pick = /** @type {HTMLElement} */ (t.closest('.ec_ed_pick'));
+    if (pick) {
+        draft.errorImages[id] = pick.dataset.pick;
+        return fillPicks(det);
+    }
+    if (t.closest('.ec_ed_tryline')) {
+        const text = tier.text[lineIdx].replaceAll('{n}', String(tier.from));
+        return tryDraft(rule, tier.from, { text, img: tier.images[lineIdx] });
+    }
+    if (t.closest('.ec_ed_tryrule')) return tryDraft(rule);
 }
 
-/** One row in the image list. A new row gets an id unused in this editor. */
-function addImageRow(box, img) {
-    const list = box.querySelector('#ec_ed_images');
-    const taken = new Set([...list.querySelectorAll('.ec_ed_img')].map(r => /** @type {HTMLElement} */ (r).dataset.img));
-    let id = img.id;
-    for (let n = taken.size + 1; !id || taken.has(id); n++) id = `img${n}`;
-    const row = document.createElement('div');
-    row.className = 'ec_ed_img';
-    row.dataset.img = id;
-    row.innerHTML = `
-        <img class="ec_ed_thumb" alt="">
-        <div class="ec_ed_img_fields">
-            <input type="text" class="text_pole ec_ed_imgname" maxlength="30" placeholder="ชื่อรูป เช่น ยิ้ม, ตกใจ, ร้องไห้">
-            <div class="ec_ed_urlrow">
-                <input type="url" class="text_pole ec_ed_url" placeholder="https://… หรือกด 📁" autocomplete="off" spellcheck="false">
-                <label class="menu_button ec_ed_pickfile" title="เลือกรูปจากเครื่อง (รูปจะติดไปกับไฟล์ที่ส่งออกด้วย)"><i class="fa-solid fa-folder-open"></i><input type="file" accept="image/*" hidden></label>
-            </div>
-            <div class="ec_ed_placerow">
-                <div class="menu_button ec_ed_place" title="ลากรูปไปวางและปรับขนาดบนจอจริง"><i class="fa-solid fa-up-down-left-right"></i> จัดตำแหน่งบนจอ</div>
-                <small class="ec_ed_placed"></small>
-            </div>
-        </div>
-        <div class="menu_button ec_ed_delimg" title="ลบรูปนี้"><i class="fa-solid fa-trash"></i></div>`;
-    /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value = img.name ?? '';
-    /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value = img.url ?? '';
-    setRowJson(row, 'crop', img.crop ? sanitizeCrop(img.crop) : null);
-    setRowJson(row, 'place', sanitizePlace(img.place));
-    markPlaced(row);
-    list.append(row);
-    return row;
-}
-
-/** Per-image settings kept on the image's row in the editor (as JSON in a data attribute). */
-function rowJson(row, key) {
-    try {
-        return row ? JSON.parse(row.dataset[key] || 'null') : null;
-    } catch {
-        return null;
+function onEditorInput(e) {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    if (!draft) return;
+    if (t.id === 'ec_ed_name') draft.name = t.value;
+    if (t.id === 'ec_ed_color') {
+        draft.color = t.value;
+        $id('ec_editor').style.setProperty('--ec-sun', t.value);
+    }
+    if (t.id === 'ec_ed_icon') {
+        draft.icon = t.value;
+        t.classList.toggle('ec_bad', !!t.value.trim() && !isSafeImageUrl(t.value.trim()));
+    }
+    const card = /** @type {HTMLElement} */ (t.closest('.ec_ed_img'));
+    const img = card && draft.images.find(i => i.id === card.dataset.img);
+    if (img) {
+        if (t.classList.contains('ec_ed_imgname')) img.name = t.value;
+        if (t.classList.contains('ec_ed_url')) img.url = t.value.trim();
+        if (t.dataset.crop) {
+            const val = k => Number(/** @type {HTMLInputElement} */ (card.querySelector(`[data-crop="${k}"]`)).value) / 100;
+            img.crop = sanitizeCrop({ x: val('x'), y: val('y'), size: 1 - val('z') });
+        }
+        if (t.type !== 'file' && !t.classList.contains('ec_ed_imgname')) fillImageCard(card);
+        return;
+    }
+    const det = /** @type {HTMLElement} */ (t.closest('.ec_ed_rule'));
+    if (!det) return;
+    const id = det.dataset.rule;
+    const tierEl = /** @type {HTMLElement} */ (t.closest('.ec_ed_tier, .ec_ed_lp'));
+    const tier = tierEl ? draft.lines[id][Number(tierEl.dataset.tier)] : null;
+    const li = Number((/** @type {HTMLElement} */ (t.closest('[data-line]')))?.dataset.line);
+    if (t.classList.contains('ec_ed_linetext')) {
+        tier.text[li] = t.value;
+        const n = ownLines(id);
+        det.querySelector('.ec_ed_mark').textContent = n ? `· ${n} ประโยค` : '· ใช้บทของตะวัน';
+    }
+    if (t.classList.contains('ec_ed_lp_pick')) {
+        tier.images[li] = t.value;
+        fillPicks(det);
     }
 }
 
-function setRowJson(row, key, value) {
-    if (value) row.dataset[key] = JSON.stringify(value);
-    else delete row.dataset[key];
+function onEditorChange(e) {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    if (!draft) return;
+    if (t.type === 'file') {
+        const files = [...(t.files ?? [])];
+        t.value = ''; // so picking the same file again still fires
+        if (!files.length) return;
+        if (t.id === 'ec_ed_addfiles') return addImageFiles(files);
+        const card = /** @type {HTMLElement} */ (t.closest('.ec_ed_img'));
+        const img = card && draft.images.find(i => i.id === card.dataset.img);
+        if (!img) return;
+        imageFileToDataUrl(files[0]).then(url => {
+            if (!url) return notify('warning', 'เปิดรูปนี้ไม่ได้ ลองไฟล์ PNG, JPG หรือ WebP');
+            img.url = url;
+            if (!img.name.trim()) img.name = files[0].name.replace(/\.[^.]+$/, '').slice(0, 30);
+            renderEditor();
+        });
+        return;
+    }
+    if (t.classList.contains('ec_ed_from')) {
+        const det = /** @type {HTMLElement} */ (t.closest('.ec_ed_rule'));
+        const id = det.dataset.rule;
+        const tier = draft.lines[id][Number(/** @type {HTMLElement} */ (t.closest('.ec_ed_tier')).dataset.tier)];
+        tier.from = Math.min(999, Math.max(2, Math.floor(Number(t.value)) || 2));
+        tidyTiers(id);
+        fillLines(det);
+    }
 }
 
-/** Which screen shapes this image has been placed for. */
-function markPlaced(row) {
-    const place = rowJson(row, 'place') ?? {};
-    const done = LAYOUTS.filter(k => place[k]).map(k => LAYOUT_SHORT[k]);
-    row.querySelector('.ec_ed_placed').textContent = done.length ? `✓ ${done.join(' · ')}` : 'ยังใช้ตำแหน่งเดิม (ยืนบนกล่องข้อความ)';
+/** Remember which errors are open, so redrawing a step keeps them open. */
+document.addEventListener('toggle', e => {
+    const det = /** @type {HTMLElement} */ (e.target);
+    if (!draft || !det.classList?.contains('ec_ed_rule')) return;
+    if (/** @type {HTMLDetailsElement} */ (det).open) draft.open.add(det.dataset.rule); else draft.open.delete(det.dataset.rule);
+}, true);
+
+/** The draft as a companion to preview, leniently: pictures without a usable link are left out. */
+function draftPreview() {
+    const images = usableImages().map(i => ({ id: i.id, name: i.name, url: i.url.trim(), crop: i.crop ?? undefined, place: i.place ?? undefined }));
+    const icon = draft.icon.trim() && isSafeImageUrl(draft.icon.trim()) ? draft.icon.trim() : '';
+    return { id: 'preview', name: draft.name.trim() || 'ตัวอย่าง', color: draft.color, images, errorImages: { ...draft.errorImages }, icon, crop: images[0]?.crop ?? DEFAULT_CROP, lines: {} };
+}
+
+/** Pop up an error with the companion as it is in the form; `entry` = this line and picture. */
+function tryDraft(rule, count = 1, entry) {
+    const comp = readEditor();
+    if (!comp) return;
+    closeFull();
+    show(rule, rule.sample, count, 'full', { id: 'preview', ...comp }, entry);
 }
 
 // ---------------------------------------------------------------- placing an image on the screen
 
 const LAYOUT_SHORT = { tall: 'จอแนวตั้ง', wide: 'จอแนวนอน' };
 
-/** While the user drags an image around the real pop-up: { box, row, layout, p, drag } */
+/** While the user drags a picture around the real pop-up: { img, layout, p, drag } */
 let placing = null;
 
-async function startPlacing(box, row) {
-    const preview = editorPreview(box);
-    const img = preview.images.find(i => i.id === row.dataset.img);
-    if (!img) return notify('warning', 'ใส่รูปก่อน แล้วค่อยจัดตำแหน่ง');
+/** @param {{ id: string, url: string, place: object|null }} img a picture in the editor's draft */
+async function startPlacing(img) {
+    const shown = draftPreview().images.find(i => i.id === img.id);
+    if (!shown) return notify('warning', 'ใส่รูปก่อน แล้วค่อยจัดตำแหน่ง');
     const layout = layoutKey();
-    const saved = rowJson(row, 'place') ?? {};
-    const name = /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value.trim() || 'ตัวอย่าง';
-    const color = /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value;
-    const comp = { id: 'preview', name, color, images: [{ ...img, place: undefined }], errorImages: {}, lines: {} };
+    const comp = { ...draftPreview(), images: [{ ...shown, place: undefined }], errorImages: {} };
     const rule = ruleById('overloaded');
     closeFull();
     closeMini();
-    current = { rule, raw: rule.sample, count: 1, comp, hits: 1, line: 'ลากรูปไปวางตรงไหนก็ได้ แล้วปรับขนาดด้วยแถบด้านบน' };
+    current = { rule, raw: rule.sample, count: 1, comp, hits: 1, img: '', line: 'ลากรูปไปวางตรงไหนก็ได้ แล้วปรับขนาดด้วยแถบด้านบน' };
     openFull();
-    placing = { box, row, layout, p: saved[layout] ? { ...saved[layout] } : null, drag: null };
+    placing = { img, layout, p: img.place?.[layout] ? { ...img.place[layout] } : null, drag: null };
     root.classList.add('ec_placing');
     root.querySelector('.ec_placebar_layout').textContent = LAYOUT_NAMES[layout];
     const sprite = /** @type {HTMLImageElement} */ (root.querySelector('.ec_sprite'));
@@ -1063,18 +1401,18 @@ function syncPlaceBar() {
     /** @type {HTMLInputElement} */ (root.querySelector('.ec_place_size')).value = String(Math.round(placing.p.h * 100));
 }
 
-/** Keep the result on the image's row; null = back to the default spot for this screen shape. */
+/** Keep the result on the picture; false = back to the default spot for this screen shape. */
 function endPlacing(keep) {
     if (!placing) return;
-    const { row, layout, p } = placing;
+    const { img, layout, p } = placing;
     if (keep !== undefined) {
-        const saved = rowJson(row, 'place') ?? {};
+        const saved = { ...img.place };
         if (keep && p) saved[layout] = sanitizePlace({ [layout]: p })?.[layout];
         else delete saved[layout];
-        setRowJson(row, 'place', sanitizePlace(saved));
-        markPlaced(row);
+        img.place = sanitizePlace(saved) ?? null;
     }
     closeFull();
+    if (draft?.images.includes(img)) renderEditor();
 }
 
 function buildPlaceBar() {
@@ -1151,118 +1489,26 @@ async function imageFileToDataUrl(file) {
     return '';
 }
 
-/** The image dropdown of every error follows the image list (keeping each choice while it exists). */
-function refreshPicks(box) {
-    const rows = [...box.querySelectorAll('.ec_ed_img')];
-    const options = `<option value="">รูปแรก (ค่าเริ่มต้น)</option>` + rows.map((row, i) => {
-        const name = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value.trim() || `รูป ${i + 1}`;
-        return `<option value="${esc(/** @type {HTMLElement} */ (row).dataset.img)}">${esc(name)}</option>`;
-    }).join('');
-    for (const select of box.querySelectorAll('.ec_ed_pick')) {
-        const keep = /** @type {HTMLSelectElement} */ (select).value;
-        select.innerHTML = options;
-        /** @type {HTMLSelectElement} */ (select).value = rows.some(r => /** @type {HTMLElement} */ (r).dataset.img === keep) ? keep : '';
-    }
-}
-
-function markRule(det) {
-    const parts = [];
-    if (det.querySelector('.ec_ed_pick').value) parts.push('เลือกรูปแล้ว');
-    if (det.querySelector('textarea').value.trim()) parts.push('เขียนบทเองแล้ว');
-    det.querySelector('.ec_ed_mark').textContent = parts.length ? `· ${parts.join(' · ')}` : '';
-}
-
-/** Crop as set by the sliders. */
-function editorCrop(box) {
-    const val = id => Number(/** @type {HTMLInputElement} */ (box.querySelector(id)).value);
-    return sanitizeCrop({ x: val('#ec_ed_cx') / 100, y: val('#ec_ed_cy') / 100, size: 1 - val('#ec_ed_cz') / 100 });
-}
-
-/** What the form says right now, leniently: bad or empty links are left out (and outlined) instead of refused. */
-function editorPreview(box) {
-    const usable = input => {
-        const url = /** @type {HTMLInputElement} */ (input).value.trim();
-        const ok = !url || isSafeImageUrl(url);
-        input.classList.toggle('ec_bad', !ok);
-        return url && ok ? url : '';
-    };
-    const images = [];
-    for (const row of box.querySelectorAll('.ec_ed_img')) {
-        const url = usable(row.querySelector('.ec_ed_url'));
-        const name = /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value.trim();
-        setSprite(row.querySelector('.ec_ed_thumb'), url || builtinSprite('neutral'));
-        row.querySelector('.ec_ed_thumb').classList.toggle('ec_placeholder', !url);
-        if (url) images.push({ id: /** @type {HTMLElement} */ (row).dataset.img, name, url, crop: rowJson(row, 'crop') ?? undefined, place: rowJson(row, 'place') ?? undefined });
-    }
-    const errorImages = {};
-    for (const det of box.querySelectorAll('.ec_ed_rule')) {
-        const pick = /** @type {HTMLSelectElement} */ (det.querySelector('.ec_ed_pick')).value;
-        if (pick) errorImages[/** @type {HTMLElement} */ (det).dataset.rule] = pick;
-    }
-    return { images, errorImages, icon: usable(box.querySelector('#ec_ed_icon')), crop: images[0]?.crop ?? DEFAULT_CROP };
-}
-
-/** Thumbnails and round icons show what each error will use, including the fallbacks. */
-function updatePreview() {
-    const box = $id('ec_editor');
-    const preview = editorPreview(box);
-    const color = /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value;
-
-    // one round icon per image (or the icon image / Tawan when there are none of their own)
-    const faces = box.querySelector('#ec_ed_faces');
-    const icons = preview.icon ? [{ title: 'รูปไอคอนแยก', icon: { url: preview.icon, crop: null } }]
-        : preview.images.length ? preview.images.map(img => ({ id: img.id, title: img.name, icon: { url: img.url, crop: img.crop ?? DEFAULT_CROP } }))
-            : [{ title: TAWAN.name, icon: iconFor(preview, UNKNOWN) }];
-    faces.innerHTML = icons.map(() => '<span class="ec_ed_face"><img alt=""></span>').join('');
-    icons.forEach((it, i) => {
-        const face = /** @type {HTMLElement} */ (faces.children[i]);
-        face.title = it.title;
-        face.style.borderColor = color;
-        if (it.id) face.dataset.img = it.id;
-        face.classList.toggle('ec_sel', !!it.id && it.id === (box.dataset.face || preview.images[0]?.id));
-        placeIcon(face, it.icon, 48);
-    });
-    for (const det of box.querySelectorAll('.ec_ed_rule')) {
-        const face = /** @type {HTMLElement} */ (det.querySelector('.ec_ed_face'));
-        face.style.borderColor = color;
-        placeIcon(face, iconFor(preview, ruleById(/** @type {HTMLElement} */ (det).dataset.rule)), 28);
-    }
-
-    // the sliders only matter for the companion's own images
-    const own = !preview.icon && preview.images.length > 0;
-    box.querySelector('.ec_ed_sliders').classList.toggle('ec_off', !own);
-    box.querySelector('#ec_ed_cropnote').textContent = preview.icon
-        ? 'ใช้รูปไอคอนแยกอยู่ (ลบลิงก์ไอคอนออกเพื่อกลับมาครอปจากรูป)'
-        : own ? '' : 'ยังไม่มีรูปของตัวเอง ใช้รูปและตำแหน่งของตะวัน';
-}
-
 /** Form → checked companion (without id), or null after telling the user what's wrong. */
 function readEditor() {
-    const box = $id('ec_editor');
+    if (!draft) return null;
     const raw = {
-        name: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_name')).value,
-        color: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_color')).value,
-        images: [...box.querySelectorAll('.ec_ed_img')].map(row => ({
-            id: /** @type {HTMLElement} */ (row).dataset.img,
-            name: /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_imgname')).value,
-            url: /** @type {HTMLInputElement} */ (row.querySelector('.ec_ed_url')).value,
-            crop: rowJson(row, 'crop'),
-            place: rowJson(row, 'place'),
-        })),
-        errorImages: {},
-        icon: /** @type {HTMLInputElement} */ (box.querySelector('#ec_ed_icon')).value,
-        crop: rowJson(box.querySelector('.ec_ed_img'), 'crop') ?? DEFAULT_CROP, // what older versions use for every image
-        lines: {},
+        name: draft.name,
+        color: draft.color,
+        icon: draft.icon,
+        images: draft.images.map(({ id, name, url, crop, place }) => ({ id, name, url, crop, place })),
+        errorImages: draft.errorImages,
+        crop: draft.images[0]?.crop ?? DEFAULT_CROP, // what older versions use for every image
+        lines: draft.lines,
     };
-    for (const det of box.querySelectorAll('.ec_ed_rule')) {
-        const id = /** @type {HTMLElement} */ (det).dataset.rule;
-        raw.errorImages[id] = /** @type {HTMLSelectElement} */ (det.querySelector('.ec_ed_pick')).value;
-        raw.lines[id] = det.querySelector('textarea').value;
-    }
     try {
         return sanitizeCompanion(raw);
     } catch (e) {
         notify('warning', e.message);
+        if (!draft.name.trim() && draft.step !== 0) {
+            draft.step = 0;
+            renderEditor();
+        }
         return null;
     }
 }
@@ -1271,21 +1517,13 @@ function saveEditor() {
     const comp = readEditor();
     if (!comp) return;
     const s = settings();
-    const id = editingId ?? newId();
+    const id = draft.id ?? newId();
     const saved = { id, ...comp, name: uniqueName(comp.name, id) };
     const i = s.companions.findIndex(c => c.id === id);
     if (i >= 0) s.companions[i] = saved; else s.companions.push(saved);
     closeEditor();
     setActive(id);
     notify('success', `บันทึก "${saved.name}" แล้ว`);
-}
-
-function closeEditor() {
-    const box = $id('ec_editor');
-    if (!box) return;
-    box.hidden = true;
-    box.innerHTML = '';
-    editingId = null;
 }
 
 // ---------------------------------------------------------------- slash command
