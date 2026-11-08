@@ -19,6 +19,7 @@
 
 import { BUILTIN_COMPANIONS, CHARACTER_LINES, EXPRESSION_FOR, SERAPHINA } from './companions.js';
 import { RULES, UNKNOWN } from './errors.js';
+import { createDiagnostics } from './diagnostics.js';
 import {
     COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, LAYOUTS, MAX_DATA_URL, MOODS,
     cropBox, dayKey, exportCompanion, graphemes, inkFor, isSafeImageUrl, matchRule, pickEntry, plainText,
@@ -27,7 +28,7 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.7.1'; // keep in sync with manifest.json
+const VERSION = '0.7.2'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
@@ -136,6 +137,19 @@ const ctx = () => SillyTavern.getContext();
 const $id = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ALL_RULES = [...RULES, UNKNOWN];
+
+// Extensions > Error Companion > Diagnose (and /ec-debug): shows a sample error full-size, measures it, reports.
+const DIAG = createDiagnostics({
+    name: 'Error Companion',
+    version: VERSION,
+    baseUrl: BASE_URL,
+    open: () => { const rule = RULES[0]; show(rule, rule.sample, 1, 'full'); },
+    close: () => closeFull(),
+    isOpen: () => !!root && !root.hidden,
+    overlay: () => document.getElementById('ec_root'),
+    frame: () => document.querySelector('#ec_root .ec_box'),
+    state: () => `enabled=${settings().enabled} display=${settings().display}`,
+});
 const RULE_IDS = ALL_RULES.map(r => r.id);
 const ruleById = id => ALL_RULES.find(r => r.id === id);
 
@@ -431,7 +445,22 @@ function buildRoot() {
 function openFull() {
     if (!root) buildRoot();
     closeMini();
-    const { rule, raw, line, comp } = current;
+    DIAG.noteOpen(current?.rule?.id ?? '');
+    // A drawing error must not keep the pop-up hidden: show it anyway and say why.
+    try { fillFull(); } catch (err) { DIAG.reportError('วาด Error Companion ไม่ได้', err); }
+    root.hidden = false;
+    root.classList.remove('ec_in');
+    void root.offsetWidth; // restart the entrance animation
+    root.classList.add('ec_in');
+    try {
+        root.querySelector('.ec_detail').scrollTop = 0;
+        placeSprite(current.place?.[layoutKey()]);
+        typeLine(current.line);
+    } catch (err) { DIAG.reportError('วาด Error Companion ไม่ได้', err); }
+}
+
+function fillFull() {
+    const { rule, raw, comp } = current;
     const pic = imageFor(comp, rule, current.img);
     current.place = pic.place;
     setSprite(root.querySelector('.ec_sprite'), pic.url);
@@ -444,13 +473,6 @@ function openFull() {
     root.querySelector('.ec_raw_text').textContent = [raw.title, raw.message].filter(Boolean).join('\n');
     root.querySelector('.ec_raw').open = rule === UNKNOWN;
     updateBadges();
-    root.hidden = false;
-    root.classList.remove('ec_in');
-    void root.offsetWidth; // restart the entrance animation
-    root.classList.add('ec_in');
-    root.querySelector('.ec_detail').scrollTop = 0;
-    placeSprite(current.place?.[layoutKey()]);
-    typeLine(line);
 }
 
 /** The screen shape a placement is saved for: tall (portrait, phones) or wide. */
@@ -509,6 +531,7 @@ function finishTyping() {
 
 function closeFull() {
     if (!root || root.hidden) return;
+    DIAG.noteClose();
     if (placing) {
         placing = null;
         root.classList.remove('ec_placing');
@@ -657,6 +680,7 @@ function renderSettings() {
         const rule = id && ruleById(id);
         if (rule) show(rule, rule.sample, Math.max(1, seenToday(rule.id)), 'full');
     });
+    DIAG.mount($id('ec_try_mini').parentElement);
     $id('ec_try_mini').addEventListener('click', () => {
         const rule = RULES[Math.floor(Math.random() * RULES.length)];
         closeFull();
@@ -1531,6 +1555,7 @@ function saveEditor() {
 function registerCommand() {
     const { SlashCommandParser, SlashCommand, SlashCommandArgument, ARGUMENT_TYPE } = ctx();
     if (!SlashCommandParser?.addCommandObject || !SlashCommand?.fromProps) return;
+    DIAG.registerCommand(ctx(), 'ec-debug');
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'ec-test',
         callback: (_args, value) => {
@@ -1583,7 +1608,7 @@ async function checkForNewVersion() {
 
 async function reloadWithFreshFiles() {
     try {
-        await Promise.all(['index.js', 'lib.js', 'errors.js', 'companions.js', 'style.css', 'manifest.json'].map(f =>
+        await Promise.all(['index.js', 'lib.js', 'errors.js', 'companions.js', 'diagnostics.js', 'style.css', 'manifest.json'].map(f =>
             fetch(new URL(f, BASE_URL), { cache: 'reload' }).catch(() => null)));
     } finally {
         location.reload();

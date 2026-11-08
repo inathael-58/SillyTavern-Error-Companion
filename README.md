@@ -150,6 +150,7 @@ id ของ error ที่ใช้ใน `lines` และ `errorImages`: `st
 
 - กด ▶ หน้า error ในหน้าตั้งค่า
 - หรือพิมพ์ `/ec-test overloaded` ในช่องแชท (ใส่ id ของ error: `stserver`, `import`, `blocked`, `prefill`, `param`, `overloaded`, `quota`, `credits`, `denied`, `forbidden`, `key`, `location`, `context`, `empty`, `model`, `network`, `noreply`, `server`, `unknown` · ว่าง = สุ่ม)
+- ป๊อปอัปไม่ขึ้นหรือมีอะไรแปลก ๆ บนมือถือ: Extensions → Error Companion → **ตรวจปัญหา** (หรือ `/ec-debug`) ทดลองเปิดตัวอย่างแล้วได้รายงานไว้คัดลอกส่งให้คนแก้
   คำสั่งนี้สร้าง error toast จริง เลยผ่านเส้นทางเดียวกับ error จริงทุกอย่าง (และนับเป็นหนึ่งครั้งด้วย)
 
 ## สำหรับคนพัฒนา
