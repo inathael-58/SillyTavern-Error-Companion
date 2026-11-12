@@ -1148,3 +1148,18 @@
 .ec_settings .ec_ed_sliders label span {
     min-width: 4.5em;
 }
+
+/* ---------------------------------------------------------------- solid surfaces
+   Blur Tint often carries alpha: glass themes pair it with a backdrop blur. A surface
+   with no blur of its own (a sticky header, or any panel once Fast UI's body.no-blur
+   strips every backdrop-filter) would let the chat or the list underneath show through,
+   so those paint the tint with its alpha dropped. `/ 1` matters: relative colour keeps
+   the source alpha when it is left out. */
+#ec_root, #ec_mini { --ec-solid: var(--ec-bg); }
+@supports (color: rgb(from red r g b / 1)) {
+    #ec_root, #ec_mini { --ec-solid: rgb(from var(--ec-bg) r g b / 1); }
+}
+#ec_root.ec_placing .ec_placebar { background: var(--ec-solid); }
+body.no-blur #ec_root .ec_box,
+body.no-blur #ec_root .ec_box::before,
+body.no-blur #ec_mini .ec_bubble { background: var(--ec-solid); }
