@@ -1163,3 +1163,16 @@
 body.no-blur #ec_root .ec_box,
 body.no-blur #ec_root .ec_box::before,
 body.no-blur #ec_mini .ec_bubble { background: var(--ec-solid); }
+
+/* แม่แบบสีที่อ่านออกเสมอ (theme-palette.js) — กล่องแจ้งปัญหา บอลลูนคำพูด และหน้าตั้งค่า: พื้นทึบ ตัวอักษรตัดกับพื้นจริง
+   ทำงานเมื่อคำนวณสีสำเร็จแล้วเท่านั้น (<html class="ec-pal">) ถ้าไม่สำเร็จจะใช้สีธีมตรง ๆ แบบเดิม */
+html.ec-pal :is(#ec_root, #ec_mini, .ec_settings) {
+    --SmartThemeBlurTintColor: var(--ec-p-surface);
+    --SmartThemeBodyColor: var(--ec-p-fg);
+    --SmartThemeQuoteColor: var(--ec-p-accent-text);
+    --SmartThemeEmColor: var(--ec-p-em);
+    --SmartThemeUnderlineColor: var(--ec-p-underline);
+    --SmartThemeBorderColor: var(--ec-p-line);
+}
+/* สีของตะวันที่เป็นตัวอักษรเล็ก: ใช้เฉดที่อ่านออกบนพื้นนี้ (พื้นหลัง/ขอบสีตะวันยังเป็นสีเดิม) */
+html.ec-pal :is(#ec_root .ec_next, #ec_mini .ec_mini_name) { color: var(--ec-p-sun); }
