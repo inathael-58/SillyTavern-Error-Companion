@@ -20,6 +20,7 @@
 import { BUILTIN_COMPANIONS, CHARACTER_LINES, EXPRESSION_FOR, SERAPHINA } from './companions.js';
 import { RULES, UNKNOWN } from './errors.js';
 import { createDiagnostics } from './diagnostics.js';
+import { installThemePalette } from './theme-palette.js';
 import {
     COMPANION_TYPE, DEFAULT_COLOR, DEFAULT_CROP, LAYOUTS, MAX_DATA_URL, MOODS,
     cropBox, dayKey, exportCompanion, graphemes, inkFor, isSafeImageUrl, matchRule, pickEntry, plainText,
@@ -28,7 +29,7 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.7.3'; // keep in sync with manifest.json
+const VERSION = '0.7.4'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
@@ -1608,7 +1609,7 @@ async function checkForNewVersion() {
 
 async function reloadWithFreshFiles() {
     try {
-        await Promise.all(['index.js', 'lib.js', 'errors.js', 'companions.js', 'diagnostics.js', 'style.css', 'manifest.json'].map(f =>
+        await Promise.all(['index.js', 'lib.js', 'errors.js', 'companions.js', 'diagnostics.js', 'theme-palette.js', 'style.css', 'manifest.json'].map(f =>
             fetch(new URL(f, BASE_URL), { cache: 'reload' }).catch(() => null)));
     } finally {
         location.reload();
@@ -1619,6 +1620,8 @@ async function reloadWithFreshFiles() {
 
 function init() {
     if (globalThis.ErrorCompanion) return; // loaded twice
+    // สีที่อ่านออกเสมอ: กล่องข้อความทึบ สีเน้นและสีของตะวันตัดกับพื้นจริง (ดู theme-palette.js)
+    try { installThemePalette({ prefix: 'ec', colors: { sun: '#f2a03d' } }); } catch (err) { console.warn('[Error Companion] theme palette', err); }
     settings();
     migrateCompanions();
     hookToastr();
