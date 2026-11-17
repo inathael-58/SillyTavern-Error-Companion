@@ -29,7 +29,7 @@ import {
 
 const MODULE = 'error_companion';
 const LOG = '[ErrorCompanion]';
-const VERSION = '0.7.4'; // keep in sync with manifest.json
+const VERSION = '0.7.5'; // keep in sync with manifest.json
 const BASE_URL = new URL('.', import.meta.url);
 
 /** The first companion. His sprites ship with the extension and his lines are the rules' own. */
@@ -987,7 +987,7 @@ function imageCardHtml(img, i) {
                 ${i === 0 ? '<small class="ec_ed_tag">รูปเริ่มต้น · error ที่ยังไม่ได้เลือกรูปจะใช้รูปนี้</small>' : ''}
                 <div class="ec_ed_urlrow">
                     ${local ? `<span class="ec_ed_local"><i class="fa-solid fa-image"></i> รูปจากเครื่อง · ${Math.round(img.url.length * 0.75 / 1024)} KB</span>`
-                        : '<input type="url" class="text_pole ec_ed_url" placeholder="https://… หรือกด 📁" autocomplete="off" spellcheck="false">'}
+                        : '<input type="url" class="text_pole ec_ed_url" placeholder="https://… หรือกดปุ่มโฟลเดอร์ข้าง ๆ" autocomplete="off" spellcheck="false">'}
                     <label class="menu_button ec_ed_pickfile" title="${local ? 'เปลี่ยนรูป' : 'เลือกรูปจากเครื่อง'}"><i class="fa-solid fa-folder-open"></i><input type="file" accept="image/*" hidden></label>
                 </div>
                 <div class="ec_ed_row">
@@ -1129,7 +1129,7 @@ function stepPicksHtml() {
     const images = usableImages();
     return `
         <small class="ec_note">${images.length
-            ? 'เลือก <b>รูปหลัก</b> ของแต่ละ error · ถ้าอยากให้บางประโยคใช้รูปอื่น เลือกทีละประโยคได้ · กด ▶ เพื่อดูของจริง'
+            ? 'เลือก <b>รูปหลัก</b> ของแต่ละ error · ถ้าอยากให้บางประโยคใช้รูปอื่น เลือกทีละประโยคได้ · กด ลองดู เพื่อดูของจริง'
             : 'ยังไม่มีรูปในคลัง ทุก error ใช้รูปของตะวันไปก่อน · กลับไปเพิ่มรูปที่ขั้นที่ 1'}</small>
         ${ALL_RULES.map(r => `
         <details class="ec_ed_rule" data-rule="${r.id}"${draft.open.has(r.id) ? ' open' : ''}>
